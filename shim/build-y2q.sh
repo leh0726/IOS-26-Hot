@@ -20,7 +20,9 @@ READELF="llvm-readelf"
 NM="llvm-nm"
 
 EXTRA_FLAGS="${SHIM_CFLAGS:-}"
-if [ -z "${1:-}" ] && [ -z "${ALLOW_UFS_WRITE:-}" ]; then
+# y2q keeps Android on userdata: the shim never writes UFS (no scratch log at the end of userdata),
+# with or without an XNU payload, unless ALLOW_UFS_WRITE=1 is set on purpose.
+if [ -z "${ALLOW_UFS_WRITE:-}" ]; then
 	EXTRA_FLAGS="$EXTRA_FLAGS -DSHIM_READONLY"
 fi
 
