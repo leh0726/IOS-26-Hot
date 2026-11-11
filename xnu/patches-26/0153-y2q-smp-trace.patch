@@ -1,0 +1,84 @@
+diff --git a/iokit/Kernel/arm/SweetCPU.cpp b/iokit/Kernel/arm/SweetCPU.cpp
+index cfcfc26..025cf7d 100644
+--- a/iokit/Kernel/arm/SweetCPU.cpp
++++ b/iokit/Kernel/arm/SweetCPU.cpp
+@@ -159,6 +159,14 @@ SweetCPU::startAll(void *arg __unused, wait_result_t result __unused)
+ 				    i, topology->cpus[i].phys_id);
+ 				panic("SWEET CPU: cpu=%u startup timeout (reset/MMU/GIC/SGI)", i);
+ 			}
++			/* y2q SMP bring-up trace (0153): cpu0 alive, what it waits for */
++			static unsigned int y2q_wait_ms;
++			if ((y2q_wait_ms++ % 250) == 0) {
++				kprintf("Y2Q WAIT: cpu%u init=%u sigen=%u (%u ms)
++", i,
++				    (unsigned)__atomic_load_n(&cpu->initialized, __ATOMIC_ACQUIRE),
++				    (unsigned)sweet_cpu_signal_is_enabled(i), y2q_wait_ms);
++			}
+ 			IOSleep(1);
+ 		}
+ 		const char *ctype = (tcpu->cluster_type == CLUSTER_TYPE_P) ? "P" :
+diff --git a/osfmk/arm64/machine_routines.c b/osfmk/arm64/machine_routines.c
+index 8b93bf7..d3ff2cf 100644
+--- a/osfmk/arm64/machine_routines.c
++++ b/osfmk/arm64/machine_routines.c
+@@ -379,6 +379,18 @@ machine_idle(void)
+ 	 * Idle_load_context()
+ 	 */
+ 	assert((__builtin_arm_rsr("DAIF") & DAIF_STANDARD_DISABLE) == DAIF_STANDARD_DISABLE);
++#if defined(SWEET)
++	{
++		/* y2q SMP bring-up trace (0153) */
++		static uint32_t _Atomic y2q_idle_seen[8];
++		unsigned int y2q_cpu = (unsigned int)cpu_number();
++		if (y2q_cpu != 0 && y2q_cpu < 8 &&
++		    os_atomic_inc_orig(&y2q_idle_seen[y2q_cpu], relaxed) < 2) {
++			kprintf("Y2Q IDLE: cpu%u enters idle
++", y2q_cpu);
++		}
++	}
++#endif
+ 	/* Check for, and act on, a WFE recommendation.
+ 	 * Bypasses context spill/fill for a minor perf. increment.
+ 	 * May unmask and restore IRQ+FIQ mask.
+diff --git a/osfmk/arm64/sleh.c b/osfmk/arm64/sleh.c
+index 1b4e13f..2862f5c 100644
+--- a/osfmk/arm64/sleh.c
++++ b/osfmk/arm64/sleh.c
+@@ -1758,6 +1758,20 @@ sleh_synchronous(arm_context_t *context, uint64_t esr, vm_offset_t far, __unused
+ 	int                    preemption_level = sleh_get_preemption_level();
+ #endif
+ 	expected_fault_handler_t expected_fault_handler = NULL;
++#if defined(SWEET)
++	{
++		/* y2q SMP bring-up trace (0153): first exceptions on each secondary CPU */
++		static uint32_t _Atomic y2q_sync_seen[8];
++		unsigned int y2q_cpu = (unsigned int)cpu_number();
++		if (y2q_cpu != 0 && y2q_cpu < 8 &&
++		    os_atomic_inc_orig(&y2q_sync_seen[y2q_cpu], relaxed) < 6) {
++			kprintf("Y2Q SYNC: cpu%u esr 0x%llx far 0x%lx pc 0x%llx
++", y2q_cpu,
++			    (unsigned long long)esr, (unsigned long)far,
++			    (unsigned long long)get_saved_state_pc(state));
++		}
++	}
++#endif
+ #ifdef CONFIG_XNUPOST
+ 	expected_fault_handler_t saved_expected_fault_handler = NULL;
+ 	uintptr_t saved_expected_fault_addr = 0;
+@@ -4009,6 +4023,16 @@ sleh_irq(arm_saved_state_t *state)
+ 	 */
+ 	uint64_t iar = __builtin_arm_rsr64("ICC_IAR1_EL1");
+ 	uint32_t intid = (uint32_t)(iar & 0xFFFFFF);
++	{
++		/* y2q SMP bring-up trace (0153): first IRQs on each secondary CPU */
++		static uint32_t _Atomic y2q_irq_seen[8];
++		unsigned int y2q_cpu = (unsigned int)cpu_number();
++		if (y2q_cpu != 0 && y2q_cpu < 8 &&
++		    os_atomic_inc_orig(&y2q_irq_seen[y2q_cpu], relaxed) < 4) {
++			kprintf("Y2Q IRQ: cpu%u intid %u
++", y2q_cpu, intid);
++		}
++	}
+ 
+ 	if (intid >= 1020 && intid <= 1023) {
+ 		return; /* spurious */
