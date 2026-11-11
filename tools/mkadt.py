@@ -5,7 +5,7 @@ Only what the early boot path actually reads (see ios-sweet's NOTES.md); every
 MMIO address comes from the SM8150 live FDT. Defaults to iPhone 11 Pro
 (iPhone12,3 / D421AP, A13 Bionic Cebu 0x8030) for iOS 26; pass --d22ap for
 legacy iPhone X (iPhone10,3 / D22AP, A11 0x8015) iOS 16 builds.
-Usage:  mkadt.py OUT.adt [--dump] [--qemu] [--highmem] [--d22ap] [--canvas-height N] [--baseband]
+Usage:  mkadt.py OUT.adt [--dump] [--qemu] [--highmem] [--d22ap] [--canvas-height N] [--baseband] [--y2q]
 """
 import hashlib, os, struct, sys
 
@@ -36,6 +36,9 @@ GICD, GICD_SIZE = 0x17a00000, 0x10000
 GICR, GICR_SIZE = 0x17a60000, 0x100000
 # cont_splash_region on RMX1931 (Realme X2 Pro, Samsung SOFEF03F-M 1080x2400 cmd-mode panel)
 FB, FB_SIZE = 0x9d000000, 0x2400000
+# y2q (Samsung Galaxy S20+ 5G, SM-G986N, SM8250): cont_splash_region, S6E3HAB 1440x3200
+Y2Q_FB, Y2Q_FB_SIZE = 0x9c000000, 0x2300000
+Y2Q_FB_W, Y2Q_FB_H = 1440, 3200
 SWEET_ECID = 0x5357454554000001  # 'SWEET' + 1, synthetic
 FB_W, FB_H, FB_STRIDE = 1080, 2400, 1080 * 4
 # Internal UFS host (ufshc@1d84000 "ufs_mem"); QEMU virt has none
@@ -140,7 +143,7 @@ def node(name, props=(), children=()):
     return n
 
 
-def build(seed=None, qemu=False, highmem=False, d22ap=False, canvas_height=2499, baseband=False):
+def build(seed=None, qemu=False, highmem=False, d22ap=False, canvas_height=2499, baseband=False, y2q=False):
     """qemu=True: same tree, but with QEMU virt's GIC addresses and CNTFRQ (tools/qemu-sweet.py)."""
     phys_base, mem_size = (HIGH_PHYS_BASE, HIGH_MEM_SIZE) if highmem else (PHYS_BASE, MEM_SIZE)
     dram_base, dram_size = (QEMU_DRAM_BASE, QEMU_DRAM_SIZE) if qemu else (DRAM_BASE, DRAM_SIZE)
@@ -306,12 +309,13 @@ def build(seed=None, qemu=False, highmem=False, d22ap=False, canvas_height=2499,
             ('canvas-height', u32(canvas_height)),
         ])])
 
+    fb, fb_size, fb_w, fb_h = (Y2Q_FB, Y2Q_FB_SIZE, Y2Q_FB_W, Y2Q_FB_H) if y2q else (FB, FB_SIZE, FB_W, FB_H)
     fbcon = node('sweet-fbcon', [
         ph(),
-        ('reg', u64(FB, FB_SIZE)),
-        ('width', u32(FB_W)),
-        ('height', u32(FB_H)),
-        ('stride', u32(FB_STRIDE)),
+        ('reg', u64(fb, fb_size)),
+        ('width', u32(fb_w)),
+        ('height', u32(fb_h)),
+        ('stride', u32(fb_w * 4)),
     ])
 
     # iBoot's panic region (pe_init.c check_for_panic_log): RAM above XNU's range
@@ -386,7 +390,7 @@ def build(seed=None, qemu=False, highmem=False, d22ap=False, canvas_height=2499,
     # (iPhone12,3 or iPhone10,3). 'xiaomi,sweet' stays for SweetPlatformExpert matching.
     return node('device-tree', [
         ph(),
-        ('compatible', cstr(target_sub) + cstr(model) + cstr('xiaomi,sweet') + cstr('google,flame') + cstr('realme,rmx1931') + cstr('qcom,sm8150') + cstr('AppleARM')),
+        ('compatible', cstr(target_sub) + cstr(model) + cstr('xiaomi,sweet') + cstr('google,flame') + cstr('realme,rmx1931') + (cstr('samsung,y2q') + cstr('qcom,sm8250') if y2q else cstr('qcom,sm8150')) + cstr('AppleARM')),
         ('model', cstr(model)),
         ('target-type', cstr(target_type)),
         ('target-sub-type', cstr(target_sub)),
@@ -409,6 +413,7 @@ if __name__ == '__main__':
         d22ap='--d22ap' in sys.argv,
         canvas_height=canvas_h,
         baseband='--baseband' in sys.argv,
+        y2q='--y2q' in sys.argv,
     )
     blob = adt.serialize(root)
     open(sys.argv[1], 'wb').write(blob)

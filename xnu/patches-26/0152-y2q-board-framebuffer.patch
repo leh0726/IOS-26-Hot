@@ -1,0 +1,81 @@
+diff --git a/bsd/dev/sweet_a6xx.h b/bsd/dev/sweet_a6xx.h
+index e4f04ef..701eac9 100644
+--- a/bsd/dev/sweet_a6xx.h
++++ b/bsd/dev/sweet_a6xx.h
+@@ -48,7 +48,7 @@
+ #define A6_RING_SIZE		0x8000u
+ #define A6_RING_DW		(A6_RING_SIZE / 4)
+ 
+-#define A6_FB_PA		0x9d000000ull
++#define A6_FB_PA		0x9c000000ull	/* y2q cont_splash_region */
+ #define A6_FB_SIZE		0xa00000ull	/* mapped for the GPU: 5 x 2 MB */
+ 
+ #define A6_GPU_ID		640
+diff --git a/bsd/dev/sweet_gpu.c b/bsd/dev/sweet_gpu.c
+index 1765fc2..c6d130f 100644
+--- a/bsd/dev/sweet_gpu.c
++++ b/bsd/dev/sweet_gpu.c
+@@ -576,8 +576,8 @@ present_wait_locked(uint32_t k, const char *why)
+ 	}
+ 	return 0;
+ }
+-#define PANEL_W		1080
+-#define PANEL_H		2400
++#define PANEL_W		1440	/* y2q S6E3HAB */
++#define PANEL_H		3200
+ #define DISPLAY_DIM_OFF		0x410000ULL	/* 256 x 16x16 (64B pitch) black alpha tiles for backlight dimming */
+ #define DISPLAY_DIM_TILE	16u
+ #define DISPLAY_DIM_PITCH	(DISPLAY_DIM_TILE * 4)
+diff --git a/iokit/Kernel/arm/hid/SweetHID.cpp b/iokit/Kernel/arm/hid/SweetHID.cpp
+index 934ce58..14b33de 100644
+--- a/iokit/Kernel/arm/hid/SweetHID.cpp
++++ b/iokit/Kernel/arm/hid/SweetHID.cpp
+@@ -362,8 +362,8 @@ OSDefineMetaClassAndStructors(SweetHIDButtons, IOHIDEventService);
+ extern "C" int sweet_display_fit_x, sweet_display_fit_y, sweet_display_fit_w, sweet_display_fit_h;
+ 
+ /* Touch reports panel pixels; flame's panel is 1080x2280 (SWEET.h). */
+-#define SWEET_PANEL_W 1080
+-#define SWEET_PANEL_H 2400
++#define SWEET_PANEL_W 1440 /* y2q S6E3HAB */
++#define SWEET_PANEL_H 3200
+ class SweetHIDTouch : public IOHIDEventService {
+ 	OSDeclareDefaultStructors(SweetHIDTouch);
+ public:
+@@ -459,7 +459,7 @@ SweetHIDTouch::start(IOService *provider)
+ 	}
+ 	int native = 0;
+ 	PE_parse_boot_argn("sweetfb_native", &native, sizeof(native));
+-	fLogicalW = native ? 1080 : 1125;
++	fLogicalW = native ? SWEET_PANEL_W : 1125;
+ 	fLogicalH = native ? SWEET_PANEL_H : 2499;
+ 	fOffX = (fLogicalW - SWEET_PANEL_W) / 2;
+ 	fOffY = (fLogicalH - SWEET_PANEL_H) / 2;
+diff --git a/pexpert/pexpert/arm64/SWEET.h b/pexpert/pexpert/arm64/SWEET.h
+index 5322c83..6100114 100644
+--- a/pexpert/pexpert/arm64/SWEET.h
++++ b/pexpert/pexpert/arm64/SWEET.h
+@@ -52,16 +52,16 @@
+ #define SWEET_IPI_SGI             1       // SGI used for cross-CPU signals
+ 
+ /*
+- * Realme X2 Pro (RMX1931 / samurai): splash framebuffer ABL scans out
+- * (cont_splash_region @ 0x9d000000, Samsung SOFEF03F-M 1080x2400 cmd-mode
+- * panel, 4320-byte rows). SWEET_EARLY_FB_BLOCK_PA is the 32MB L2 block
+- * [0x9c000000, 0x9e000000) mapped Device-GRE holding it.
++ * Samsung Galaxy S20+ 5G (y2q / SM-G986N, SM8250): splash framebuffer ABL
++ * scans out (cont_splash_region @ 0x9c000000, 0x2300000 bytes, Samsung
++ * S6E3HAB 1440x3200 panel, 5760-byte rows). SWEET_EARLY_FB_BLOCK_PA is the
++ * 32MB L2 block [0x9c000000, 0x9e000000) mapped Device-GRE holding it.
+  */
+-#define SWEET_EARLY_FB_PA         0x9d000000
++#define SWEET_EARLY_FB_PA         0x9c000000
+ #define SWEET_EARLY_FB_BLOCK_PA   0x9c000000
+-#define SWEET_EARLY_FB_WIDTH      1080
+-#define SWEET_EARLY_FB_HEIGHT     2400
+-#define SWEET_EARLY_FB_STRIDE     4320
++#define SWEET_EARLY_FB_WIDTH      1440
++#define SWEET_EARLY_FB_HEIGHT     3200
++#define SWEET_EARLY_FB_STRIDE     5760
+ 
+ #define GIC_SPURIOUS_IRQ          1023    // IRQ no. for GIC spurious interrupt
+ 

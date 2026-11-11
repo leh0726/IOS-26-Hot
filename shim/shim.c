@@ -25,9 +25,10 @@
 #include "util.h"
 
 #define IMEM_RESTART_REASON	0x146bf65cUL	/* qcom,msm-imem restart_reason@65c */
-#define RESTART_BOOTLOADER	0x77665500U
+/* y2q (SM-G986N): no fastboot on Samsung, so every run ends in TWRP (recovery) */
+#define RESTART_BOOTLOADER	0x77665502U	/* qcom restart_reason "recovery" */
 #define PON_SOFT_RB_SPARE	0x88f		/* PM8150 (SID 0) PON, reason in [7:1] */
-#define PON_REASON_BOOTLOADER	0x02
+#define PON_REASON_BOOTLOADER	0x01		/* PON reason "recovery" */
 #define PON_PS_HOLD_RESET_CTL	0x85a		/* [3:0] type */
 #define PON_PS_HOLD_RESET_CTL2	0x85b		/* [7] enable */
 #define PON_RESET_EN		0x80
@@ -49,8 +50,9 @@
 static int ufs_ok;
 static volatile int in_exception;
 
-#define PSTORE_PMSG_BASE	0xb7fc0000UL	/* RMX1931 ramoops pmsg-ramoops-0 (2 MiB) */
-#define PSTORE_PMSG_CAP		(0x200000UL - 12UL)
+/* y2q ramoops@9fa00000 (1 MiB): dmesg, console, ftrace, pmsg zones of 256 KiB each */
+#define PSTORE_PMSG_BASE	0x9fac0000UL
+#define PSTORE_PMSG_CAP		(0x40000UL - 12UL)
 #define PSTORE_MAGIC		0x43474244U	/* PERSISTENT_RAM_SIG */
 
 static void pstore_save_log(void)
@@ -224,7 +226,7 @@ static void log_gic(void)
 /* Plain RAM where XNU will live: is it there and writable with the MMU off? */
 static void log_ram(void)
 {
-	static const uint64_t probe[] = { 0x100000000ULL, 0x180000000ULL, 0x1fff00000ULL, 0x27ff00000ULL };
+	static const uint64_t probe[] = { 0x110000000ULL, 0x180000000ULL, 0x1fff00000ULL, 0x27ff00000ULL };
 	for (unsigned i = 0; i < sizeof(probe) / sizeof(probe[0]); i++) {
 		volatile uint64_t *p = (volatile uint64_t *)(uintptr_t)probe[i];
 		uint64_t old = p[0];
@@ -266,8 +268,8 @@ static int read_keys(int spmi_ok)
 		return 0;
 	uint8_t pon = 0, g6 = 1, g7 = 1;
 	spmi_read(0, 0x810, &pon);	/* bit0 = kpdpwr, bit1 = resin */
-	spmi_read(0, 0xc508, &g6);	/* PM8150 GPIO6 = vol_up (active low) */
-	spmi_read(0, 0xc608, &g7);	/* PM8150 GPIO7 = vol_down (active low) */
+	spmi_read(4, 0xc208, &g6);	/* y2q: PM8150L (SID 4) GPIO3 = vol_up (active low) */
+	/* y2q: vol_down is PON RESIN only (g7 stays 1) */
 	int mask = 0;
 	if (pon & 1)
 		mask |= 1;		/* PWR */
@@ -334,10 +336,10 @@ static void readonly_viewer(int spmi_ok)
 			redraw = 0;
 			char hdr1[80], hdr2[80];
 			unsigned n1 = fmt_snprintf(hdr1, sizeof(hdr1),
-				"RMX1931 XNU SHIM PROBE (ZERO-WRITE)  p%u/%u  keys=%x",
+				"Y2Q XNU SHIM PROBE (ZERO-WRITE)  p%u/%u  keys=%x",
 				cur + 1, pages, keys);
 			unsigned n2 = fmt_snprintf(hdr2, sizeof(hdr2),
-				"Fastboot in %us | VOL+/VOL-: page | PWR: exit now", rem);
+				"TWRP in %us | VOL+/VOL-: page | PWR: exit now", rem);
 			con_clear(0xff102438);
 			con_text(hdr1, n1, GREEN);
 			con_text(hdr2, n2, YELLOW);
@@ -359,7 +361,7 @@ static void save_before_jump(void)
 
 void shim_main(uintptr_t dtb)
 {
-	log_printf("RMX1931 SHIM probe v1 t=%lu\n", ticks_now());
+	log_printf("Y2Q SHIM probe v1 t=%lu\n", ticks_now());
 	log_cpu(dtb);
 	int spmi_ok = !spmi_init();
 	if (spmi_ok) {
@@ -433,7 +435,7 @@ void shim_main(uintptr_t dtb)
 	}
 	if (con_ok) {
 		con_clear(0xff102438);
-		con_str("RMX1931", "shim probe v1");
+		con_str("Y2Q", "shim probe v1");
 	}
 	sde_autorefresh(1);
 	if (!sde.tear_en)
