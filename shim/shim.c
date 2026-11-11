@@ -296,12 +296,13 @@ static void readonly_viewer(int spmi_ok)
 	if (!pages)
 		starts[pages++] = 0;
 
-	unsigned cur = 0;
+	/* y2q: open on the last page, where the rescued XNU console ends */
+	unsigned cur = pages - 1;
 	int prev_keys = read_keys(spmi_ok);
 	uint64_t t0 = ticks_now(), hz = rsr("cntfrq_el0");
 	if (!hz)
 		hz = 19200000UL;
-	const unsigned timeout_s = 25;
+	const unsigned timeout_s = 90;
 	unsigned last_rem = 999;
 	int redraw = 1;
 
@@ -445,9 +446,18 @@ void shim_main(uintptr_t dtb)
 
 	/* An XNU payload in the ramdisk means: boot it. */
 	struct loader_fb lfb = { fb, stride, FB_W, FB_H, save_before_jump };
-	if (loader_has_payload(dtb))
-		wdt_arm(30);
-	const char *why = loader_boot(dtb, &lfb);
+	const char *why = "not booted";
+#ifdef SHIM_READONLY
+	/* y2q: Volume Down held at start = show the previous XNU run's console (RAM mirror) instead of booting */
+	if (spmi_ok && (read_keys(spmi_ok) & 4)) {
+		log_printf("loader: VOL- held, log viewer instead of XNU\n");
+	} else
+#endif
+	{
+		if (loader_has_payload(dtb))
+			wdt_arm(30);
+		why = loader_boot(dtb, &lfb);
+	}
 	log_printf("loader: %s\n", why);
 
 	log_gic();

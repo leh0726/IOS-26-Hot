@@ -25,11 +25,12 @@ rsh() {
 }
 
 check_phone() {
-	local model
-	model=$($ADB shell getprop ro.product.model | tr -d '\r')
-	case "$model" in
-	SM-G986N | SM_G986N) ;;
-	*) die "connected phone is '$model', not SM-G986N" ;;
+	# TWRP (afaneh92's y2q build) reports ro.product.model SM-G986U; the bootloader version is the phone's own
+	local bl
+	bl=$($ADB shell getprop ro.boot.bootloader | tr -d '\r')
+	case "$bl" in
+	G986N*) ;;
+	*) die "connected phone's bootloader is '$bl', not an SM-G986N (G986N...)" ;;
 	esac
 }
 

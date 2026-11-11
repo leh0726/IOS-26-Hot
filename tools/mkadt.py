@@ -143,7 +143,7 @@ def node(name, props=(), children=()):
     return n
 
 
-def build(seed=None, qemu=False, highmem=False, d22ap=False, canvas_height=2499, baseband=False, y2q=False):
+def build(seed=None, qemu=False, highmem=False, d22ap=False, canvas_height=2499, baseband=False, y2q=False, ncpus=8):
     """qemu=True: same tree, but with QEMU virt's GIC addresses and CNTFRQ (tools/qemu-sweet.py)."""
     phys_base, mem_size = (HIGH_PHYS_BASE, HIGH_MEM_SIZE) if highmem else (PHYS_BASE, MEM_SIZE)
     dram_base, dram_size = (QEMU_DRAM_BASE, QEMU_DRAM_SIZE) if qemu else (DRAM_BASE, DRAM_SIZE)
@@ -242,10 +242,12 @@ def build(seed=None, qemu=False, highmem=False, d22ap=False, canvas_height=2499,
     # Single-CPU QEMU uses 'P' (cluster 0) so recount's 1-element RCT_TOPO_CPU_KIND
     # array indexes RCT_CPU_PERFORMANCE (0) instead of RCT_CPU_EFFICIENCY (1).
     cpu_nodes = []
-    for core in range(1 if qemu else 8):
-        is_p = (not qemu) and (core >= 4)
+    # ncpus=1 (y2q bring-up without SMP): one node, typed 'P' like single-CPU QEMU (recount needs it)
+    single = qemu or ncpus == 1
+    for core in range(1 if single else ncpus):
+        is_p = (not single) and (core >= 4)
         cluster_id = 1 if is_p else 0
-        cluster_type = ord('P') if (qemu or is_p) else ord('E')
+        cluster_type = ord('P') if (single or is_p) else ord('E')
         cluster_core_id = (core - 4) if is_p else core
         cpu_nodes.append(node(f'cpu{core}', [
             ph(),
@@ -402,11 +404,14 @@ def build(seed=None, qemu=False, highmem=False, d22ap=False, canvas_height=2499,
 
 if __name__ == '__main__':
     canvas_h = 2499
+    ncpus = 8
     for idx, arg in enumerate(sys.argv[1:], 1):
         if arg == '--canvas-height' and idx + 1 < len(sys.argv):
             canvas_h = int(sys.argv[idx + 1])
         elif arg.startswith('--canvas-height='):
             canvas_h = int(arg.split('=', 1)[1])
+        elif arg.startswith('--ncpus='):
+            ncpus = int(arg.split('=', 1)[1])
     root = build(
         qemu='--qemu' in sys.argv,
         highmem='--highmem' in sys.argv,
@@ -414,6 +419,7 @@ if __name__ == '__main__':
         canvas_height=canvas_h,
         baseband='--baseband' in sys.argv,
         y2q='--y2q' in sys.argv,
+        ncpus=ncpus,
     )
     blob = adt.serialize(root)
     open(sys.argv[1], 'wb').write(blob)
