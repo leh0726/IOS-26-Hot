@@ -1,0 +1,31 @@
+diff --git a/osfmk/arm64/sleh.c b/osfmk/arm64/sleh.c
+index 80e69e3..13c057f 100644
+--- a/osfmk/arm64/sleh.c
++++ b/osfmk/arm64/sleh.c
+@@ -4023,12 +4023,21 @@ sleh_irq(arm_saved_state_t *state)
+ 	uint64_t iar = __builtin_arm_rsr64("ICC_IAR1_EL1");
+ 	uint32_t intid = (uint32_t)(iar & 0xFFFFFF);
+ 	{
+-		/* y2q SMP bring-up trace (0153): first IRQs on each secondary CPU */
+-		static uint32_t _Atomic y2q_irq_seen[8];
++		/*
++		 * y2q SMP bring-up trace (0154): every CPU, IRQs counted per class
++		 * (timer / IPI / other) and printed at counts 1, 2, 4, 8, ... so a storm
++		 * shows as fast-growing counts and a dead timer as a CPU that stops.
++		 */
++		static uint64_t _Atomic y2q_irq_count[8][3];
+ 		unsigned int y2q_cpu = (unsigned int)cpu_number();
+-		if (y2q_cpu != 0 && y2q_cpu < 8 &&
+-		    os_atomic_inc_orig(&y2q_irq_seen[y2q_cpu], relaxed) < 4) {
+-			kprintf("Y2Q IRQ: cpu%u intid %u\n", y2q_cpu, intid);
++		unsigned int y2q_kind = (intid == sweet_vtimer_intid) ? 0 : (intid < 16 ? 1 : 2);
++		if (y2q_cpu < 8 && intid < 1020) {
++			uint64_t n = os_atomic_inc(&y2q_irq_count[y2q_cpu][y2q_kind], relaxed);
++			if ((n & (n - 1)) == 0 && (y2q_cpu != 0 || n >= 64)) {
++				kprintf("Y2Q IRQ: cpu%u %s #%llu intid %u\n", y2q_cpu,
++				    y2q_kind == 0 ? "timer" : (y2q_kind == 1 ? "ipi" : "dev"),
++				    (unsigned long long)n, intid);
++			}
+ 		}
+ 	}
+ 
