@@ -1,0 +1,52 @@
+diff --git a/osfmk/arm64/machine_routines.c b/osfmk/arm64/machine_routines.c
+index 303e4b7..c8cd7c4 100644
+--- a/osfmk/arm64/machine_routines.c
++++ b/osfmk/arm64/machine_routines.c
+@@ -387,6 +387,10 @@ machine_idle(void)
+ 		if (y2q_cpu != 0 && y2q_cpu < 8 &&
+ 		    os_atomic_inc_orig(&y2q_idle_seen[y2q_cpu], relaxed) < 2) {
+ 			extern void y2q_gic_dump(const char *tag);
++			kprintf("Y2Q IDLE: cpu%u running %d rtc_deadline %llx dec 0x%x\n", y2q_cpu,
++			    (int)getCpuDatap()->cpu_running,
++			    (unsigned long long)getCpuDatap()->rtclock_timer.deadline,
++			    (unsigned)getCpuDatap()->cpu_decrementer);
+ 			kprintf("Y2Q IDLE: cpu%u enters idle cntv_ctl %llx tval %llx vct %llx pct %llx cntfrq %llu\n", y2q_cpu,
+ 			    (unsigned long long)__builtin_arm_rsr64("CNTV_CTL_EL0"),
+ 			    (unsigned long long)__builtin_arm_rsr64("CNTV_TVAL_EL0"),
+@@ -2510,6 +2514,23 @@ ml_set_decrementer(uint32_t dec_value)
+ 
+ 	assert(ml_get_interrupts_enabled() == FALSE);
+ 	cdp->cpu_decrementer = dec_value;
++#if defined(SWEET)
++	{
++		/* y2q SMP bring-up trace (0156) */
++		static uint64_t _Atomic y2q_dec_count[8];
++		static uint32_t _Atomic y2q_dec_near[8];
++		unsigned int y2q_cpu = (unsigned int)cpu_number();
++		if (y2q_cpu != 0 && y2q_cpu < 8) {
++			uint64_t n = os_atomic_inc(&y2q_dec_count[y2q_cpu], relaxed);
++			bool near = dec_value < 0x10000000u &&
++			    os_atomic_inc_orig(&y2q_dec_near[y2q_cpu], relaxed) < 8;
++			if ((n & (n - 1)) == 0 || near) {
++				kprintf("Y2Q DEC: cpu%u #%llu dec 0x%x from %p\n", y2q_cpu,
++				    (unsigned long long)n, dec_value, __builtin_return_address(0));
++			}
++		}
++	}
++#endif
+ 
+ 	if (cdp->cpu_set_decrementer_func) {
+ 		cdp->cpu_set_decrementer_func(dec_value);
+diff --git a/osfmk/arm64/sleh.c b/osfmk/arm64/sleh.c
+index 13c057f..c2445e8 100644
+--- a/osfmk/arm64/sleh.c
++++ b/osfmk/arm64/sleh.c
+@@ -4033,7 +4033,7 @@ sleh_irq(arm_saved_state_t *state)
+ 		unsigned int y2q_kind = (intid == sweet_vtimer_intid) ? 0 : (intid < 16 ? 1 : 2);
+ 		if (y2q_cpu < 8 && intid < 1020) {
+ 			uint64_t n = os_atomic_inc(&y2q_irq_count[y2q_cpu][y2q_kind], relaxed);
+-			if ((n & (n - 1)) == 0 && (y2q_cpu != 0 || n >= 64)) {
++			if ((n & (n - 1)) == 0) {
+ 				kprintf("Y2Q IRQ: cpu%u %s #%llu intid %u\n", y2q_cpu,
+ 				    y2q_kind == 0 ? "timer" : (y2q_kind == 1 ? "ipi" : "dev"),
+ 				    (unsigned long long)n, intid);
