@@ -1,0 +1,87 @@
+diff --git a/iokit/Kernel/arm/SweetCPU.cpp b/iokit/Kernel/arm/SweetCPU.cpp
+index e65ccb7..e89565e 100644
+--- a/iokit/Kernel/arm/SweetCPU.cpp
++++ b/iokit/Kernel/arm/SweetCPU.cpp
+@@ -20,6 +20,7 @@
+ 
+ extern "C" void sweet_secondary_entry(void);
+ extern "C" boolean_t sweet_cpu_signal_is_enabled(unsigned int cpu);
++extern "C" void y2q_gic_dump(const char *tag);
+ 
+ class SweetCPU;
+ static SweetCPU *sweet_cpus[MAX_CPUS];
+@@ -162,9 +163,14 @@ SweetCPU::startAll(void *arg __unused, wait_result_t result __unused)
+ 			/* y2q SMP bring-up trace (0153): cpu0 alive, what it waits for */
+ 			static unsigned int y2q_wait_ms;
+ 			if ((y2q_wait_ms++ % 250) == 0) {
+-				kprintf("Y2Q WAIT: cpu%u init=%u sigen=%u (%u ms)\n", i,
++				kprintf("Y2Q WAIT: cpu%u init=%u sigen=%u (%u ms) on cpu%d vct %llx pct %llx\n", i,
+ 				    (unsigned)__atomic_load_n(&cpu->initialized, __ATOMIC_ACQUIRE),
+-				    (unsigned)sweet_cpu_signal_is_enabled(i), y2q_wait_ms);
++				    (unsigned)sweet_cpu_signal_is_enabled(i), y2q_wait_ms, cpu_number(),
++				    (unsigned long long)__builtin_arm_rsr64("CNTVCT_EL0"),
++				    (unsigned long long)__builtin_arm_rsr64("CNTPCT_EL0"));
++				if (y2q_wait_ms == 1) {
++					y2q_gic_dump("wait");
++				}
+ 			}
+ 			IOSleep(1);
+ 		}
+@@ -208,6 +214,10 @@ SweetCPU::initCPU(bool boot)
+ 	kprintf("SWEET CPU: cpu=%u entered initCPU mpidr=0x%llx EL%llu IRQs=%u\n",
+ 	    getCPUNumber(), __builtin_arm_rsr64("MPIDR_EL1") & 0xffffULL,
+ 	    __builtin_arm_rsr64("CurrentEL") >> 2, ml_get_interrupts_enabled());
++	kprintf("Y2Q INIT: cpu%u vct %llx pct %llx cntv_ctl %llx\n", getCPUNumber(),
++	    (unsigned long long)__builtin_arm_rsr64("CNTVCT_EL0"),
++	    (unsigned long long)__builtin_arm_rsr64("CNTPCT_EL0"),
++	    (unsigned long long)__builtin_arm_rsr64("CNTV_CTL_EL0"));
+ 	__atomic_store_n(&initialized, 1, __ATOMIC_RELEASE);
+ }
+ 
+diff --git a/osfmk/arm64/machine_routines.c b/osfmk/arm64/machine_routines.c
+index 4299c77..303e4b7 100644
+--- a/osfmk/arm64/machine_routines.c
++++ b/osfmk/arm64/machine_routines.c
+@@ -386,7 +386,14 @@ machine_idle(void)
+ 		unsigned int y2q_cpu = (unsigned int)cpu_number();
+ 		if (y2q_cpu != 0 && y2q_cpu < 8 &&
+ 		    os_atomic_inc_orig(&y2q_idle_seen[y2q_cpu], relaxed) < 2) {
+-			kprintf("Y2Q IDLE: cpu%u enters idle\n", y2q_cpu);
++			extern void y2q_gic_dump(const char *tag);
++			kprintf("Y2Q IDLE: cpu%u enters idle cntv_ctl %llx tval %llx vct %llx pct %llx cntfrq %llu\n", y2q_cpu,
++			    (unsigned long long)__builtin_arm_rsr64("CNTV_CTL_EL0"),
++			    (unsigned long long)__builtin_arm_rsr64("CNTV_TVAL_EL0"),
++			    (unsigned long long)__builtin_arm_rsr64("CNTVCT_EL0"),
++			    (unsigned long long)__builtin_arm_rsr64("CNTPCT_EL0"),
++			    (unsigned long long)__builtin_arm_rsr64("CNTFRQ_EL0"));
++			y2q_gic_dump("idle");
+ 		}
+ 	}
+ #endif
+diff --git a/pexpert/arm/pe_fiq.c b/pexpert/arm/pe_fiq.c
+index 6089db9..abcc544 100644
+--- a/pexpert/arm/pe_fiq.c
++++ b/pexpert/arm/pe_fiq.c
+@@ -228,3 +228,22 @@ pe_init_fiq()
+ {
+ }
+ #endif
++
++#if defined(SWEET)
++/* y2q SMP bring-up (0155): this CPU's redistributor state and the distributor control */
++void y2q_gic_dump(const char *tag);
++void
++y2q_gic_dump(const char *tag)
++{
++	if (gicr_base == 0 || gicd_base == 0) {
++		return;
++	}
++	vm_offset_t gicr_pe_base = find_gicr_pe_base();
++	kprintf("Y2Q GIC %s: mpidr %llx rd +0x%lx waker %x grp %x en %x pend %x act %x cfg1 %x pri16_19 %08x gicd_ctlr %x\n",
++	    tag, (unsigned long long)(__builtin_arm_rsr64("MPIDR_EL1") & 0xffff),
++	    (unsigned long)(gicr_pe_base - gicr_base),
++	    gicr_read32(GICR_WAKER), gicr_read32(GICR_IGROUPR0), gicr_read32(GICR_ISENABLER0),
++	    gicr_read32(0x10200), gicr_read32(0x10300), gicr_read32(0x10C04),
++	    gicr_read32(GICR_IPRIORITYR0 + 16), gicd_read32(GICD_CTLR));
++}
++#endif /* SWEET */
