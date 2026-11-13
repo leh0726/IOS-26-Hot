@@ -1,0 +1,20 @@
+diff --git a/bsd/dev/sweet_cpufreq.c b/bsd/dev/sweet_cpufreq.c
+index b87a0de..2033137 100644
+--- a/bsd/dev/sweet_cpufreq.c
++++ b/bsd/dev/sweet_cpufreq.c
+@@ -172,6 +172,15 @@ sweet_cpufreq_init(void)
+ {
+ 	unsigned want = 3;
+ 	(void)PE_parse_boot_argn("flamecpufreq", &want, sizeof(want));
++	if (want == 0) {
++		/*
++		 * y2q (0155): off means untouched. The OSM blocks at 0x18323000.. are SM8150's; SM8250 has
++		 * cpufreq-hw (EPSS) elsewhere, and reading the SM8150 addresses never completes, which kept
++		 * the boot thread from mounting root.
++		 */
++		printf("SWEET CPUFREQ: off (flamecpufreq=0), OSM not touched\n");
++		return;
++	}
+ 	osm_boot_abs = mach_absolute_time();
+ 	unsigned mapped = 0;
+ 
