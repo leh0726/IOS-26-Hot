@@ -45,6 +45,10 @@ FB_W, FB_H, FB_STRIDE = 1080, 2400, 1080 * 4
 UFS, UFS_SIZE = 0x01d84000, 0x3000
 TIMEBASE = 19200000
 VTIMER_INTID = 19
+# y2q (SM8250): the arch timer node uses the standard PPI numbers <13 14 11 12>, so the
+# virtual timer is PPI 11 = INTID 27 (SM8150 numbers them 1/2/3/0: INTID 19). With 19 the timer
+# interrupt is never enabled and XNU only sees expired deadlines by polling; SMP then hangs.
+Y2Q_VTIMER_INTID = 27
 # QEMU virt (-M virt,gic-version=3 -cpu cortex-a76): GICD/GICR and the generic timer's CNTFRQ
 QEMU_GICD, QEMU_GICR, QEMU_TIMEBASE = 0x08000000, 0x080a0000, 62500000
 QEMU_VTIMER_INTID = 27
@@ -276,7 +280,7 @@ def build(seed=None, qemu=False, highmem=False, d22ap=False, canvas_height=2499,
         ph(),
         ('compatible', cstr('arm,gic-v3')),
         ('interrupt-controller', b''),
-        ('virtual-timer-intid', u32(QEMU_VTIMER_INTID if qemu else VTIMER_INTID)),
+        ('virtual-timer-intid', u32(QEMU_VTIMER_INTID if qemu else (Y2Q_VTIMER_INTID if y2q else VTIMER_INTID))),
         ('reg', u64(gicd - SOC_BASE, GICD_SIZE, gicr - SOC_BASE, GICR_SIZE)),
     ])
     arm_io = node('arm-io', [
