@@ -1,0 +1,44 @@
+diff --git a/iokit/Kernel/arm/SweetAccelerator.cpp b/iokit/Kernel/arm/SweetAccelerator.cpp
+index 10d7cf2..d59b9b0 100644
+--- a/iokit/Kernel/arm/SweetAccelerator.cpp
++++ b/iokit/Kernel/arm/SweetAccelerator.cpp
+@@ -140,7 +140,7 @@ SweetAccelerator::start(IOService *provider)
+ 	setProperty("MetalPluginName", plugin);
+ 	setProperty("MetalPluginClassName", which == 2 ? "HotMTL2Device" : "SweetMTLDevice");
+ 	setProperty("IOGLBundleName", plugin);
+-	setProperty("model", "Adreno 640");
++	setProperty("model", "Adreno 650");	/* y2q (SM-G986N) */
+ 	setProperty(kIOUserClientClassKey, "SweetAcceleratorUserClient");
+ 	sweet_accel_diag_init_lock();
+ 	registerService();
+@@ -460,8 +460,8 @@ SweetAcceleratorUserClient::externalMethod(uint32_t selector, IOExternalMethodAr
+ 		if (args->scalarOutputCount < 3) {
+ 			return kIOReturnBadArgument;
+ 		}
+-		out[0] = 640;
+-		out[1] = 0x06040001;
++		out[0] = 650;		/* y2q Adreno 650 */
++		out[1] = 0x06050002;
+ 		out[2] = sweet_gpu_ready();
+ 		return kIOReturnSuccess;
+ 	case 1: {
+@@ -944,14 +944,15 @@ SweetAcceleratorUserClient::v2Method(uint32_t method, const void *in, uint32_t i
+ 	}
+ 	case NativeAdrenoMethodGetDeviceInfo: {
+ 		V2_OUT(NativeAdrenoAbiDeviceInfo);
+-		/* what bsd/dev/sweet_a6xx.c's hw_init programs: GMEM 1 MB at 0x100000, UBWC 3 (hbb 15, lvl 2+3 swizzle) */
+-		rp->chip_id = 0x06040001;
+-		rp->gmem_bytes = 0x100000;
++		/* y2q: what sweet_a6xx.c's hw_init programs for the A650 (0156): GMEM 1 MB + 128 KB at 0x100000,
++		 * UBWC 3 with highest bank bit 16 (lvl 2+3 swizzle) */
++		rp->chip_id = 0x06050002;
++		rp->gmem_bytes = 0x120000;
+ 		rp->gmem_base = 0x100000;
+ 		rp->uche_trap_base = 0x1fffffffff000ULL;
+ 		rp->va_start = fWinBase;
+ 		rp->va_size = fWinSize;
+-		rp->highest_bank_bit = 15;
++		rp->highest_bank_bit = 16;
+ 		rp->ubwc_swizzle = 0x6;
+ 		rp->macrotile_mode = 0;
+ 		rp->ubwc_version = 3;
