@@ -150,11 +150,13 @@ done
 # and mode, plus a .migrated marker, else asks a helper and crashes
 # ("BUG IN LIBTRACE: Failed to migrate directory").
 db="$work/root/private/var/db"
-sudo install -d -o 272 -g 272 -m 0751 "$db/diagnostics"
-sudo install -d -o 272 -g 272 -m 0755 "$db/uuidtext" "$db/diagnostics/timesync"
+# GNU install rejects owners missing from the host's passwd ("invalid user: '272'"): create, then chown
+sudo install -d -m 0751 "$db/diagnostics"
+sudo install -d -m 0755 "$db/uuidtext" "$db/diagnostics/timesync"
 for d in diagnostics uuidtext diagnostics/timesync; do
-	sudo install -o 272 -g 272 -m 0644 /dev/null "$db/$d/.migrated"
+	sudo install -m 0644 /dev/null "$db/$d/.migrated"
 done
+sudo chown -R 272:272 "$db/diagnostics" "$db/uuidtext"
 
 # System keybag for the built-in AppleKeyStore (no passcode).
 sudo install -d -m 0700 -o 0 -g 0 "$work/root/private/var/keybags"
