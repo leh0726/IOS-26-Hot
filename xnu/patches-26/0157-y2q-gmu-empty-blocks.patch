@@ -1,0 +1,16 @@
+diff --git a/bsd/dev/sweet_a6xx.c b/bsd/dev/sweet_a6xx.c
+index fdcc90f..a072a69 100644
+--- a/bsd/dev/sweet_a6xx.c
++++ b/bsd/dev/sweet_a6xx.c
+@@ -393,6 +393,11 @@ static int fw_load(struct a6_gpu *g)
+ 		memcpy(&addr, p, 4);
+ 		memcpy(&size, p + 4, 4);
+ 		const uint8_t *data = p + 16;
++		if (size == 0) {
++			/* A650 firmware has empty blocks (e.g. at 0x10004000): skipped, as Linux and G986N-iOS do */
++			p = data;
++			continue;
++		}
+ 		uint64_t dst = 0;
+ 		if (addr < 0x4000)
+ 			dst = GMU_REG(GMU_ITCM) + addr;
