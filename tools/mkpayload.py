@@ -175,7 +175,12 @@ def add_gpufw_to_adt(adt_blob, fw_dir):
     root, _ = adt.parse(adt_blob)
     chosen = next(c for c in root.children if c.name == 'chosen')
     chosen.props = [p for p in chosen.props if not p[0].startswith('gpufw,')]
-    for name in GPU_FW:
+    # the A640 set (RMX1931/flame) when present, else every regular file in the directory (y2q: a650_*)
+    if all(os.path.isfile(os.path.join(fw_dir, n)) for n in GPU_FW):
+        names = GPU_FW
+    else:
+        names = sorted(n for n in os.listdir(fw_dir) if os.path.isfile(os.path.join(fw_dir, n)))
+    for name in names:
         chosen.props.append(('gpufw,' + name, 0, open(os.path.join(fw_dir, name), 'rb').read()))
     return adt.serialize(root)
 

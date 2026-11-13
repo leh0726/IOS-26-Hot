@@ -1,0 +1,173 @@
+diff --git a/bsd/dev/sweet_a6xx.c b/bsd/dev/sweet_a6xx.c
+index 64c9240..fdcc90f 100644
+--- a/bsd/dev/sweet_a6xx.c
++++ b/bsd/dev/sweet_a6xx.c
+@@ -112,7 +112,7 @@ static void zero_pa(uint64_t pa, uint64_t size)
+ #define VA_LOG		A6_GMU_LOG_VA
+ #define VA_HFI		0x60005000u
+ 
+-#define RSCC		(0x02c6a000ull + 0x23000)
++#define RSCC		0x03de0000ull	/* y2q A650: dt "rscc"; the A640 had it at GMU + 0x23000 */
+ #define RSCC_REG(o)	(RSCC + 4ull * (o))
+ #define PDC		0x0b290000ull
+ #define PDC_REG(o)	(PDC + 4ull * (o))
+@@ -337,29 +337,24 @@ static int gmu_smmu(struct a6_gpu *g)
+ 	return 0;
+ }
+ 
+-/* a6xx_gmu_rpmh_init for the A640 (pdc_address_offset 0x30090). */
++/*
++ * a6xx_gmu_rpmh_init for the A650 (y2q): the RSCC's sequence memory is at 0x154
++ * (REG_A6XX_RSCC_SEQ_MEM_0_DRV0_A650), hidden TCS command 2 is 0x80000021, and the PDC is
++ * programmed by the AOP (pdc_in_aop): only the GPU's sequence start and enable are written.
++ */
+ static void rpmh_init(void)
+ {
+ 	static const uint32_t rscc[][2] = {
+ 		{ 0x0004, 1u << 24 }, { 0x000b, 1 }, { 0x000e, 0 }, { 0x000d, 0 }, { 0x0010, 0 }, { 0x000f, 0 },
+-		{ 0x0012, 0x80000000 }, { 0x0011, 0 }, { 0x0100, 0 }, { 0x0008, 0x4520 }, { 0x0009, 0x4510 },
+-		{ 0x000a, 0x4514 }, { 0x0180, 0xa7a506a0 }, { 0x0181, 0xa1e6a6e7 }, { 0x0182, 0xa2e081e1 },
+-		{ 0x0183, 0xe9a982e2 }, { 0x0184, 0x0020e8a8 },
+-	};
+-	static const uint32_t seq[] = { 0xfebea1e1, 0xa5a4a3a2, 0x8382a6e0, 0xbce3e284, 0x002081fc };
+-	static const uint32_t pdc[][2] = {
+-		{ 0x1573, 7 }, { 0x1574, 0 }, { 0x1572, 0 }, { 0x1575, 0x10108 }, { 0x1576, 0x30010 },
+-		{ 0x1577, 1 }, { 0x1579, 0x10108 }, { 0x157a, 0x30000 }, { 0x157b, 0 }, { 0x157d, 0x10108 },
+-		{ 0x157e, 0x30090 }, { 0x157f, 0 },
+-		{ 0x15d7, 7 }, { 0x15d8, 0 }, { 0x15d6, 0 }, { 0x15d9, 0x10108 }, { 0x15da, 0x30010 },
+-		{ 0x15db, 2 }, { 0x15dd, 0x10108 }, { 0x15de, 0x30000 }, { 0x15df, 3 }, { 0x15e1, 0x10108 },
+-		{ 0x15e2, 0x30090 }, { 0x15e3, 3 },
+-		{ 0x1148, 0 }, { 0x1140, 0x80000001 },
++		{ 0x0012, 0x80000021 }, { 0x0011, 0 }, { 0x0100, 0 }, { 0x0008, 0x4520 }, { 0x0009, 0x4510 },
++		{ 0x000a, 0x4514 },
++		{ 0x0154, 0xeaaae5a0 }, { 0x0155, 0xe1a1ebab }, { 0x0156, 0xa2e0a581 }, { 0x0157, 0xecac82e2 },
++		{ 0x0158, 0x0020edad },
+ 	};
++	static const uint32_t pdc[][2] = { { 0x1148, 0 }, { 0x1140, 0x80000001 } };
++	a6_log("rscc: status0 %x seq_mem0 %x (before)\n", rd32(RSCC_REG(0x0004)), rd32(RSCC_REG(0x0154)));
+ 	for (unsigned i = 0; i < sizeof(rscc) / sizeof(rscc[0]); i++)
+ 		wr32(RSCC_REG(rscc[i][0]), rscc[i][1]);
+-	for (unsigned i = 0; i < sizeof(seq) / sizeof(seq[0]); i++)
+-		wr32(PDC_SEQ + 4 * i, seq[i]);
+ 	for (unsigned i = 0; i < sizeof(pdc) / sizeof(pdc[0]); i++)
+ 		wr32(PDC_REG(pdc[i][0]), pdc[i][1]);
+ }
+@@ -388,7 +383,7 @@ static void hfi_table(struct a6_gpu *g)
+ static int fw_load(struct a6_gpu *g)
+ {
+ 	uint32_t len;
+-	const uint8_t *fw = a6_firmware("a640_gmu.bin", &len);
++	const uint8_t *fw = a6_firmware("a650_gmu.bin", &len);
+ 	if (!fw)
+ 		return -1;
+ 	const uint8_t *p = fw, *end = fw + len;
+@@ -425,6 +420,8 @@ static int gmu_boot(struct a6_gpu *g)
+ 	rpmh_init();
+ 	hfi_table(g);
+ 
++	wr32(GMU_REG(0x1f8f1), 1);		/* GMU_CX_FALNEXT_INTF (a650 family) */
++	wr32(GMU_REG(0x1f8f0), 1);		/* GMU_CX_FAL_INTF */
+ 	wr32(GMU_REG(GMU_GENERAL_7), 1);
+ 	wr32(GMU_REG(GMU_RSCC_REQ), 1u << 1);
+ 	(void)wait_bit(GMU_REG(GMU_RSCC_ACK), 1u << 1, 1, 200);	/* never acks; harmless */
+@@ -442,7 +439,7 @@ static int gmu_boot(struct a6_gpu *g)
+ 	wr32(GMU_REG(GMU_QTBL_INFO), 1);
+ 	wr32(GMU_REG(GMU_FENCE0), (1u << 31) | (0xau << 18) | 0xa0);
+ 	wr32(GMU_REG(GMU_CM3_CFG), 0x4052);
+-	wr32(GMU_REG(GMU_SFR_ADDR), 0x06040100);
++	wr32(GMU_REG(GMU_SFR_ADDR), 0x06050200);	/* chip 0x06050002: minor in 15:12, patch in 11:8 */
+ 	for (uint32_t i = 0; i < 4; i++)
+ 		wr32(GPU + 4 * (0x3c03 + i), 0x00071620);
+ 	wr32(GMU_REG(GMU_CP_MSG), VA_LOG | (A6_GMU_LOG_SIZE / 0x1000 - 1));
+@@ -487,8 +484,9 @@ static int gmu_boot(struct a6_gpu *g)
+ #define LVL_NOM		256
+ #define LVL_NOM_L1	320
+ 
+-static const uint32_t gpu_khz[] = { 0, 257000, 345000, 427000, 499200, 585000, 675000 };
+-static const uint32_t gpu_lvl[] = { 0, LVL_LOW_SVS, LVL_SVS, LVL_SVS_L1, LVL_SVS_L2, LVL_NOM, LVL_NOM_L1 };
++/* y2q A650: 305/400/490 MHz (the three lowest dt qcom,gpu-pwrlevels, as G986N-iOS uses) */
++static const uint32_t gpu_khz[] = { 0, 305000, 400000, 490000 };
++static const uint32_t gpu_lvl[] = { 0, LVL_LOW_SVS, LVL_SVS, LVL_SVS_L1 };
+ static const uint32_t gmu_khz[] = { 0, 200000 };
+ static const uint32_t gmu_lvl[] = { 0, LVL_MIN_SVS };
+ 
+@@ -657,7 +655,7 @@ static int gmu_hfi(struct a6_gpu *g)
+ /* ---- zap shader through TrustZone PAS ---- */
+ 
+ #define PAS_GPU		13
+-#define ZAP_REGION	0x99515000ull	/* RMX1931 reserved-memory pil_gpu_region */
++#define ZAP_REGION	0x9031a000ull	/* y2q reserved-memory pil_gpu_region */
+ #define ZAP_SIZE	0x2000u
+ #define SCM_PIL(cmd)	(0x42000000ull | (2u << 8) | (cmd))
+ 
+@@ -674,7 +672,7 @@ static int zap_load(struct a6_gpu *g)
+ {
+ 	uint64_t r1 = 0;
+ 	uint32_t mlen, slen;
+-	const uint8_t *mdt = a6_firmware("a640_zap.mdt", &mlen), *b02 = a6_firmware("a640_zap.b02", &slen);
++	const uint8_t *mdt = a6_firmware("a650_zap.mdt", &mlen), *b02 = a6_firmware("a650_zap.b02", &slen);
+ 	if (!mdt || !b02 || slen > ZAP_SIZE)
+ 		return -1;
+ 	a6_write(a6_pool_pa(g, A6_OFF_ZAP_META), mdt, mlen);
+@@ -1026,23 +1024,25 @@ static int gpu_cp_init(struct a6_gpu *g, bool resume)
+ 		/* UCHE: write range max, trap base, write-through base (trap 0x1fffffffff000) */
+ 		{ 0x0e05, 0xffffffc0 }, { 0x0e06, 0x1ffff }, { 0x0e09, 0xfffff000 }, { 0x0e0a, 0x1ffff },
+ 		{ 0x0e07, 0xfffff000 }, { 0x0e08, 0x1ffff },
+-		{ 0x0e0b, 0x100000 }, { 0x0e0c, 0 }, { 0x0e0d, 0x1fffff }, { 0x0e0e, 0 },	/* GMEM range */
++		{ 0x0e0b, 0x100000 }, { 0x0e0c, 0 }, { 0x0e0d, 0x21ffff }, { 0x0e0e, 0 },	/* GMEM range: A650 1 MB + 128 KB */
+ 		{ 0x0e18, 0x804 }, { 0x0e17, 0x4 },	/* UCHE_FILTER_CNTL, CACHE_WAYS */
+ 		{ 0x08c2, 0x02000140 }, { 0x08c1, 0x8040362c }, { 0x08c3, 128 },	/* ROQ, mem pool */
+ 		{ 0x098d, 1 }, { 0x0500, 1 },		/* CP_AHB_CNTL, RBBM_PERFCTR_CNTL */
+ 		{ 0x001f, (1u << 30) | 0x1fffff },	/* RBBM_INTERFACE_HANG_INT_CNTL */
+ 		{ 0x0e19, (1u << 7) | 1 },		/* UCHE_CLIENT_PF */
+-		{ 0x9e00, 0x00180000 },			/* PC_DBG_ECO_CNTL: prim_fifo_threshold */
++		{ 0x9e00, 0x00300200 },			/* PC_DBG_ECO_CNTL: A650 */
++		{ 0x0844, (1u << 6) | (1u << 5) | (1u << 3) | (1u << 2) | (1u << 1) },	/* CP_APRIV_CNTL (a650 family) */
++		{ 0x8e04, 0x04100000 },			/* RB_DBG_ECO_CNTL (Mesa, A650) */
+ 		{ 0x08d0, 0 },				/* CP_PERFCTR_CP_SEL[0]: always count */
+-		/* a6xx_set_ubwc_config: highest bank bit 15 (hbb_lo 2), AMSBC, UBWC 3 */
+-		{ 0x8e08, (1u << 4) | (2u << 1) }, { 0xb604, 2u << 1 }, { 0xae02, 2u << 1 },
+-		{ 0x0e01, 2u << 21 }, { 0x0534, 0 },
++		/* a6xx_set_ubwc_config, A650: highest bank bit 16 (hbb_lo 3), AMSBC, UBWC 3 */
++		{ 0x8e08, (1u << 11) | (1u << 4) | (3u << 1) }, { 0xb604, 3u << 1 }, { 0xae02, (2u << 4) | (3u << 1) },
++		{ 0x0e01, 3u << 21 }, { 0x0534, 0 },
+ 	};
+ 	for (unsigned i = 0; i < sizeof(init) / sizeof(init[0]); i++)
+ 		wr32(GREG(init[i][0]), init[i][1]);
+ 
+ 	uint32_t len;
+-	const uint8_t *sqe = a6_firmware("a630_sqe.fw", &len);
++	const uint8_t *sqe = a6_firmware("a650_sqe.fw", &len);
+ 	if (!sqe || len < 8 || len > 0x10000)
+ 		return -1;
+ 	a6_write(a6_pool_pa(g, A6_OFF_SQE), sqe + 4, (len - 4 + 3) & ~3u);	/* minus the first dword */
+diff --git a/bsd/dev/sweet_a6xx.h b/bsd/dev/sweet_a6xx.h
+index 701eac9..9caa421 100644
+--- a/bsd/dev/sweet_a6xx.h
++++ b/bsd/dev/sweet_a6xx.h
+@@ -51,8 +51,9 @@
+ #define A6_FB_PA		0x9c000000ull	/* y2q cont_splash_region */
+ #define A6_FB_SIZE		0xa00000ull	/* mapped for the GPU: 5 x 2 MB */
+ 
+-#define A6_GPU_ID		640
+-#define A6_CHIP_ID		0x06040001ull
++/* y2q (SM-G986N, SM8250): Adreno 650, dt qcom,chipid 0x06050002 (G986N-iOS redwood_adreno.c) */
++#define A6_GPU_ID		650
++#define A6_CHIP_ID		0x06050002ull
+ 
+ struct a6_gpu {
+ 	uint64_t pool_pa;
+@@ -157,10 +158,10 @@ uint32_t a6_blit_ib(const struct a6_gpu *g, const struct a6_blit *b, uint32_t *d
+ #define A6_CP_MEMCPY		0x75
+ 
+ /* Register/state access for status and dumps */
+-#define A6_GPU_BASE		0x02c00000ull
++#define A6_GPU_BASE		0x03d00000ull	/* y2q SM8250 */
+ #define A6_GREG(o)		(A6_GPU_BASE + 4ull * (o))
+-#define A6_GPUCC		0x02c90000ull
+-#define A6_SMMU			0x02ca0000ull
++#define A6_GPUCC		0x03d90000ull
++#define A6_SMMU			0x03da0000ull
+ #define A6_SMMU_CB(n)		(A6_SMMU + 0x8000 + 0x1000ull * (n))
+ #define A6_FSR_FAULT		0xc00001feu
+ #define A6_GMEM_LOG_OFF		0x91000ull

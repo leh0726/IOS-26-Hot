@@ -20,7 +20,16 @@ python3 tools/mkadt.py work/boot/y2q-d421ap.adt --highmem --y2q --ncpus=$NCPUS
 ARGS="debug=0xc serial=3 cpus=$NCPUS keepsyms=1 -v -enable_kprintf_spam -noprogress wdt=-1"
 ARGS="$ARGS cs_integrity_skip=1 fips_mode=0x44"
 # SM8150-only hardware: off until each driver has a y2q port
-ARGS="$ARGS sweetgpu=0 hotmtl=0 sweetmtl=0 sweetusb=0 flamecpufreq=0"
+GPUFW=()
+if [ -n "${GPU:-}" ]; then
+	# GPU=1: the kernel powers up the Adreno 650 (xnu 0156) with the phone's own firmware in work/fw/gpu-a650
+	# (a650_gmu.bin, a650_sqe.fw from /vendor/firmware; a650_zap.* from the apnhlos partition). No Metal yet.
+	ARGS="$ARGS sweetgpu=1 sweetgpufreq=${GPUFREQ:-1} hotmtl=0 sweetmtl=0"
+	GPUFW=(--gpufw work/fw/gpu-a650)
+else
+	ARGS="$ARGS sweetgpu=0 hotmtl=0 sweetmtl=0"
+fi
+ARGS="$ARGS sweetusb=0 flamecpufreq=0"
 ARGS="$ARGS rmxtouch=0 flametouch=0 sweettouch=0 rmxaudio=0 rmxbattery=0 sweetbattery=0 rmxhaptic=0 rmxtorch=0"
 if [ -n "${ROOT:-}" ]; then
 	# ROOT=1: the iOS root image is on userdata (tools/y2q-build-rootfs.sh, written from TWRP). The root is
@@ -34,6 +43,6 @@ else
 fi
 ARGS="$ARGS flamereboot=${FLAMEREBOOT:-90} $*"
 
-python3 tools/mkpayload.py "$KERNEL" work/boot/y2q-d421ap.adt work/boot/payload-y2q.bin --cmdline "$ARGS"
+python3 tools/mkpayload.py "$KERNEL" work/boot/y2q-d421ap.adt work/boot/payload-y2q.bin --cmdline "$ARGS" "${GPUFW[@]}"
 bash shim/build-y2q.sh "$PWD/work/boot/payload-y2q.bin" "$OUT"
 echo "boot-args: $ARGS"
