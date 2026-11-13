@@ -17,7 +17,9 @@ blocks=$(( $($ADB shell blockdev --getsize64 $DEV | tr -d '\r') / 4096 ))
 area=$(( 1 + 4 * 1024 * 1024 / 4096 ))
 raw=$(mktemp)
 $ADB exec-out "dd if=$DEV bs=4096 skip=$((blocks - area)) count=$area 2>/dev/null" > "$raw"
-python -I - "$raw" "$OUT" <<'PY'
+# Windows python cannot open Git Bash's /tmp/...: hand it native paths when cygpath exists
+winp() { command -v cygpath >/dev/null && cygpath -w "$1" || echo "$1"; }
+python -I - "$(winp "$raw")" "$(winp "$OUT")" <<'PY'
 import struct, sys
 raw = open(sys.argv[1], 'rb').read()
 magic, ver, size, total, seq = struct.unpack_from('<8sIIQQ', raw, 0)
