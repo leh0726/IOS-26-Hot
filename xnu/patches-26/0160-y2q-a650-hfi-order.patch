@@ -1,0 +1,75 @@
+diff --git a/bsd/dev/sweet_a6xx.c b/bsd/dev/sweet_a6xx.c
+index 6887b52..f518e3b 100644
+--- a/bsd/dev/sweet_a6xx.c
++++ b/bsd/dev/sweet_a6xx.c
+@@ -524,6 +524,30 @@ static int cmddb_aux(const char *id, uint64_t *aux, uint32_t *len)
+ 	return -1;
+ }
+ 
++/* y2q (0160): an RPMh resource's address by name, as G986N-iOS gets the A650's bus votes; 0 = none */
++static uint32_t cmddb_addr(const char *id)
++{
++	uint64_t db = rd32(0x0c3f000cull);
++	if (rd32(db + 4) != 0x0c0330db)
++		return 0;
++	uint64_t data = db + 4 + 4 + 8 * 16 + 4 + 4;
++	for (uint32_t r = 0; r < 8; r++) {
++		uint64_t rh = db + 8 + 16 * r;
++		uint32_t w0 = rd32(rh), w1 = rd32(rh + 4);
++		uint32_t hoff = w0 >> 16, cnt = w1 >> 16;
++		for (uint32_t e = 0; e < cnt; e++) {
++			uint64_t ent = data + hoff + 24 * e;
++			char name[9];
++			for (uint32_t i = 0; i < 8; i++)
++				name[i] = (char)(rd32(ent + (i & ~3u)) >> (8 * (i & 3)));
++			name[8] = 0;
++			if (strncmp(name, id, 8) == 0)
++				return rd32(ent + 16);
++		}
++	}
++	return 0;
++}
++
+ static uint32_t aux16(uint64_t aux, uint32_t i)
+ {
+ 	return (rd32(aux + 2 * (i & ~1u)) >> (16 * (i & 1))) & 0xffff;
+@@ -635,16 +659,25 @@ static int gmu_hfi(struct a6_gpu *g)
+ 	};
+ 	for (unsigned i = 0; i < sizeof(bw) / sizeof(bw[0]); i++)
+ 		msg[bw[i][0]] = bw[i][1];
++	{
++		uint32_t sh0 = cmddb_addr("SH0"), mc0 = cmddb_addr("MC0"), acv = cmddb_addr("ACV"), cn0 = cmddb_addr("CN0");
++		a6_log("hfi: cmd-db SH0 %x MC0 %x ACV %x CN0 %x\n", sh0, mc0, acv, cn0);
++		if (sh0 && mc0 && acv && cn0) {
++			msg[24] = sh0;
++			msg[25] = mc0;
++			msg[26] = acv;
++			msg[6] = cn0;
++		}
++	}
+ 	rc |= hfi_send(g, 3, msg, 32 + 128);
+ 	msg[1] = 0;
+-	rc |= hfi_send(g, 14, msg, 2);
+-	rc |= hfi_send(g, 10, msg, 1);
++	rc |= hfi_send(g, 14, msg, 2);		/* CORE_FW_START */
+ 	uint32_t max_lvl = (uint32_t)(ngpu - 1);
+ 	uint32_t lvl = g->perf_level >= 1 ? (g->perf_level <= max_lvl ? g->perf_level : max_lvl) : 1;
+ 	msg[1] = 1;
+ 	msg[2] = lvl;			/* index into gpu_khz */
+-	msg[3] = 0;
+-	rc |= hfi_send(g, 30, msg, 4);
++	msg[3] = 0xffffffff;		/* bandwidth: no index (G986N-iOS) */
++	rc |= hfi_send(g, 30, msg, 4);		/* GX_BW_PERF_VOTE */
+ 	a6_log("hfi: perf/bw tables, core fw start, start, perf vote %u MHz -> %d\n", gpu_khz[lvl] / 1000, rc);
+ 
+ 	wr32(GMU_REG(GMU_H2G_SET), 1u << 30);	/* OOB GPU_SET */
+@@ -655,6 +688,9 @@ static int gmu_hfi(struct a6_gpu *g)
+ 		a6_log("GX not powered; not touching GPU registers\n");
+ 		return -1;
+ 	}
++	msg[1] = 0;
++	int start = hfi_send(g, 10, msg, 1);	/* START, once GX has power (G986N-iOS order) */
++	a6_log("hfi: start -> %d\n", start);
+ 	return 0;
+ }
+ 
