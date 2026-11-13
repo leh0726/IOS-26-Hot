@@ -224,7 +224,7 @@ jobs:
           s = s.replace("#if defined(__APPLE__)\n#include <sys/disk.h>", "#if 0 && defined(__APPLE__)\n#include <sys/disk.h>")
           open("lib/portability.c", "w").write(s)
           PY
-            export PATH="/opt/homebrew/opt/gnu-sed/libexec/gnubin:$PATH"
+            export PATH="$(brew --prefix)/opt/gnu-sed/libexec/gnubin:$PATH"
             HOSTCC=/usr/bin/clang CC="$CC_IOS" make macos_defconfig
             HOSTCC=/usr/bin/clang CC="$CC_IOS" NOSTRIP=1 make -j4 toybox
             strip -x toybox
