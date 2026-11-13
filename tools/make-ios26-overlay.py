@@ -490,6 +490,8 @@ def main():
     ap.add_argument('--wland-wrapper', help='optional wrapper path for org.iosonpixel.wland ProgramArguments[0]')
     ap.add_argument('--selftest-bin', help='optional compiled arm64 self-test Mach-O for guarded test boots')
     ap.add_argument('--selftest-script', help='optional bring-up self-test shell script for guarded test boots')
+    ap.add_argument('--y2q-minimal', action='store_true',
+                    help='y2q (SM-G986N): no wland/dropbear/hotstored/hotauthd daemons (no such hardware or binaries)')
     ap.add_argument('--extra', action='append', default=[],
                     help='extra file SRC:DST[:OCTAL_MODE] to include in the overlay (repeatable)')
     args = ap.parse_args()
@@ -647,8 +649,15 @@ def main():
     jobs.pop('/System/Library/LaunchDaemons/org.iosonpixel.sweetstored.plist', None)
     jobs.pop('/System/Library/LaunchDaemons/org.iosonpixel.sweetauthd.plist', None)
 
+    if args.y2q_minimal:
+        # y2q (SM-G986N): no WCN3990 (wland would map SM8150's MPSS carve-out), no USB network yet (dropbear),
+        # and no HotStore/HotAuth binaries in this overlay: register none of them.
+        for k in ('/System/Library/LaunchDaemons/org.iosonpixel.wland.plist',
+                  '/System/Library/LaunchDaemons/org.iosonpixel.dropbear.plist'):
+            jobs.pop(k, None)
     # Ensure hotstored root helper is registered for HotStore.app (127.0.0.1:29170).
-    jobs['/System/Library/LaunchDaemons/com.ios26hot.hotstored.plist'] = {
+    if not args.y2q_minimal:
+        jobs['/System/Library/LaunchDaemons/com.ios26hot.hotstored.plist'] = {
         'EnvironmentVariables': {'PATH': '/var/local/bin:/usr/bin:/bin:/usr/sbin:/sbin'},
         'KeepAlive': True,
         'Label': 'com.ios26hot.hotstored',
@@ -661,7 +670,8 @@ def main():
     }
 
     # Ensure hotauthd Apple Account / iCloud helper is registered for HotAuth.app & akd (127.0.0.1:29171).
-    jobs['/System/Library/LaunchDaemons/com.ios26hot.hotauthd.plist'] = {
+    if not args.y2q_minimal:
+        jobs['/System/Library/LaunchDaemons/com.ios26hot.hotauthd.plist'] = {
         'EnvironmentVariables': {'PATH': '/var/local/bin:/usr/bin:/bin:/usr/sbin:/sbin'},
         'KeepAlive': True,
         'Label': 'com.ios26hot.hotauthd',
@@ -726,7 +736,10 @@ def main():
         }
 
     after_count = len(jobs)
-    missing_keep = [k for k in KEEP_DAEMON_KEYS if k not in jobs]
+    y2q_dropped = ('org.iosonpixel.dropbear.plist', 'org.iosonpixel.wland.plist',
+                   'com.ios26hot.hotstored.plist', 'com.ios26hot.hotauthd.plist')
+    missing_keep = [k for k in KEEP_DAEMON_KEYS if k not in jobs and
+                    not (args.y2q_minimal and os.path.basename(k) in y2q_dropped)]
     if missing_keep:
         raise RuntimeError(f'refusing to build overlay: required LaunchDaemons missing: {missing_keep}')
 

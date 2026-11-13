@@ -24,8 +24,14 @@ GPUFW=()
 if [ -n "${GPU:-}" ]; then
 	# GPU=1: the kernel powers up the Adreno 650 (xnu 0156) with the phone's own firmware in work/fw/gpu-a650
 	# (a650_gmu.bin, a650_sqe.fw from /vendor/firmware; a650_zap.* from the apnhlos partition). No Metal yet.
-	ARGS="$ARGS sweetgpu=1 sweetgpufreq=${GPUFREQ:-1} hotmtl=0 sweetmtl=0"
 	GPUFW=(--gpufw work/fw/gpu-a650)
+	if [ -n "${METAL:-}" ]; then
+		# METAL=1: publish SweetAccelerator (IOAcceleratorES) for HotMetal2 (metal2vulkan + Turnip): needs the
+		# userland overlay (OVERLAY=work/boot/ios26-overlay.tar, tools/make-ios26-overlay.py --hotmetal2 ...)
+		ARGS="$ARGS sweetgpu=1 sweetgpufreq=${GPUFREQ:-1} hotmtl=2"
+	else
+		ARGS="$ARGS sweetgpu=1 sweetgpufreq=${GPUFREQ:-1} hotmtl=0 sweetmtl=0"
+	fi
 else
 	ARGS="$ARGS sweetgpu=0 hotmtl=0 sweetmtl=0"
 fi
@@ -43,6 +49,8 @@ else
 fi
 ARGS="$ARGS flamereboot=${FLAMEREBOOT:-90} $*"
 
-python3 tools/mkpayload.py "$KERNEL" work/boot/y2q-d421ap.adt work/boot/payload-y2q.bin --cmdline "$ARGS" "${GPUFW[@]}"
+OVL=()
+[ -n "${OVERLAY:-}" ] && OVL=(--overlay "$OVERLAY")
+python3 tools/mkpayload.py "$KERNEL" work/boot/y2q-d421ap.adt work/boot/payload-y2q.bin --cmdline "$ARGS" "${GPUFW[@]}" "${OVL[@]}"
 bash shim/build-y2q.sh "$PWD/work/boot/payload-y2q.bin" "$OUT"
 echo "boot-args: $ARGS"
