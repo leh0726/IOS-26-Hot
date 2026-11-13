@@ -1,0 +1,68 @@
+diff --git a/iokit/Kernel/arm/SweetCPU.cpp b/iokit/Kernel/arm/SweetCPU.cpp
+index e89565e..2dc2f9c 100644
+--- a/iokit/Kernel/arm/SweetCPU.cpp
++++ b/iokit/Kernel/arm/SweetCPU.cpp
+@@ -21,6 +21,7 @@
+ extern "C" void sweet_secondary_entry(void);
+ extern "C" boolean_t sweet_cpu_signal_is_enabled(unsigned int cpu);
+ extern "C" void y2q_gic_dump(const char *tag);
++extern "C" int y2q_smp_trace;      /* _Atomic int in machine_routines.c, same layout */
+ 
+ class SweetCPU;
+ static SweetCPU *sweet_cpus[MAX_CPUS];
+@@ -214,6 +215,9 @@ SweetCPU::initCPU(bool boot)
+ 	kprintf("SWEET CPU: cpu=%u entered initCPU mpidr=0x%llx EL%llu IRQs=%u\n",
+ 	    getCPUNumber(), __builtin_arm_rsr64("MPIDR_EL1") & 0xffffULL,
+ 	    __builtin_arm_rsr64("CurrentEL") >> 2, ml_get_interrupts_enabled());
++	if (getCPUNumber() != 0) {
++		__atomic_store_n(&y2q_smp_trace, 1, __ATOMIC_RELAXED);
++	}
+ 	kprintf("Y2Q INIT: cpu%u vct %llx pct %llx cntv_ctl %llx\n", getCPUNumber(),
+ 	    (unsigned long long)__builtin_arm_rsr64("CNTVCT_EL0"),
+ 	    (unsigned long long)__builtin_arm_rsr64("CNTPCT_EL0"),
+diff --git a/osfmk/arm64/machine_routines.c b/osfmk/arm64/machine_routines.c
+index c8cd7c4..8affeb5 100644
+--- a/osfmk/arm64/machine_routines.c
++++ b/osfmk/arm64/machine_routines.c
+@@ -2507,6 +2507,12 @@ ml_interrupt_prewarm(__unused uint64_t deadline)
+ /*
+  * Assumes fiq, irq disabled.
+  */
++#if defined(SWEET)
++/* y2q SMP bring-up trace (0157): set by SweetCPU::initCPU on the first secondary */
++int _Atomic y2q_smp_trace;
++uint32_t _Atomic y2q_smp_budget;
++#endif
++
+ void
+ ml_set_decrementer(uint32_t dec_value)
+ {
+@@ -2520,6 +2526,11 @@ ml_set_decrementer(uint32_t dec_value)
+ 		static uint64_t _Atomic y2q_dec_count[8];
+ 		static uint32_t _Atomic y2q_dec_near[8];
+ 		unsigned int y2q_cpu = (unsigned int)cpu_number();
++		if (os_atomic_load(&y2q_smp_trace, relaxed) &&
++		    os_atomic_inc_orig(&y2q_smp_budget, relaxed) < 48) {
++			kprintf("Y2Q T DEC cpu%u 0x%x %p\n", y2q_cpu, dec_value,
++			    __builtin_return_address(0));
++		}
+ 		if (y2q_cpu != 0 && y2q_cpu < 8) {
+ 			uint64_t n = os_atomic_inc(&y2q_dec_count[y2q_cpu], relaxed);
+ 			bool near = dec_value < 0x10000000u &&
+diff --git a/osfmk/arm64/sleh.c b/osfmk/arm64/sleh.c
+index c2445e8..009267e 100644
+--- a/osfmk/arm64/sleh.c
++++ b/osfmk/arm64/sleh.c
+@@ -4031,6 +4031,12 @@ sleh_irq(arm_saved_state_t *state)
+ 		static uint64_t _Atomic y2q_irq_count[8][3];
+ 		unsigned int y2q_cpu = (unsigned int)cpu_number();
+ 		unsigned int y2q_kind = (intid == sweet_vtimer_intid) ? 0 : (intid < 16 ? 1 : 2);
++		extern int _Atomic y2q_smp_trace;
++		extern uint32_t _Atomic y2q_smp_budget;
++		if (os_atomic_load(&y2q_smp_trace, relaxed) &&
++		    os_atomic_inc_orig(&y2q_smp_budget, relaxed) < 48) {
++			kprintf("Y2Q T IRQ cpu%u %u\n", y2q_cpu, intid);
++		}
+ 		if (y2q_cpu < 8 && intid < 1020) {
+ 			uint64_t n = os_atomic_inc(&y2q_irq_count[y2q_cpu][y2q_kind], relaxed);
+ 			if ((n & (n - 1)) == 0) {
