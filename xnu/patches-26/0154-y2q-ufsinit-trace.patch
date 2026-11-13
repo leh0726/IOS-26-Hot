@@ -1,0 +1,39 @@
+diff --git a/bsd/dev/sweet_ufs.c b/bsd/dev/sweet_ufs.c
+index caf40bf..586e7b7 100644
+--- a/bsd/dev/sweet_ufs.c
++++ b/bsd/dev/sweet_ufs.c
+@@ -672,20 +672,34 @@ sweet_ufs_init(void)
+ 	    want, su.lun, su.first_block, su.nblocks * UFS_BLOCK >> 20,
+ 	    su.writable ? "read-write" : "read-only", su.dma_pa);
+ 	sweet_log_start();
++	printf("Y2Q init: sweet_sample_start\n");   /* y2q (0154): find the call that blocks the boot thread */
+ 	sweet_sample_start();
++	printf("Y2Q init: sweet_cpufreq_init\n");   /* y2q (0154): find the call that blocks the boot thread */
+ 	sweet_cpufreq_init();
++	printf("Y2Q init: sweet_pmem_init\n");   /* y2q (0154): find the call that blocks the boot thread */
+ 	sweet_pmem_init();       /* /dev/pmem: bsd/dev/sweet_pmem.c */
++	printf("Y2Q init: flame_wlan_init\n");   /* y2q (0154): find the call that blocks the boot thread */
+ 	flame_wlan_init();       /* /dev/wlan, en0 + Apple80211 for wifid: bsd/dev/flame_wlan.c */
++	printf("Y2Q init: sweet_gpu_init\n");   /* y2q (0154): find the call that blocks the boot thread */
+ 	sweet_gpu_init();        /* Adreno 640 (sweetgpu=1): bsd/dev/sweet_gpu.c */
+ 	/* Input drivers (HID services in iokit/Kernel/arm/hid/SweetHID.cpp). */
++	printf("Y2Q init: sweet_keys_init\n");   /* y2q (0154): find the call that blocks the boot thread */
+ 	sweet_keys_init();
++	printf("Y2Q init: sweet_touch_init\n");   /* y2q (0154): find the call that blocks the boot thread */
+ 	sweet_touch_init();
++	printf("Y2Q init: sweet_fts_init\n");   /* y2q (0154): find the call that blocks the boot thread */
+ 	sweet_fts_init();
++	printf("Y2Q init: rmx1931_touch_init\n");   /* y2q (0154): find the call that blocks the boot thread */
+ 	rmx1931_touch_init();
++	printf("Y2Q init: rmx1931_battery_init\n");   /* y2q (0154): find the call that blocks the boot thread */
+ 	rmx1931_battery_init();
++	printf("Y2Q init: rmx1931_torch_init\n");   /* y2q (0154): find the call that blocks the boot thread */
+ 	rmx1931_torch_init();
++	printf("Y2Q init: rmx1931_haptic_init\n");   /* y2q (0154): find the call that blocks the boot thread */
+ 	rmx1931_haptic_init();
++	printf("Y2Q init: sweet_usb_probe\n");   /* y2q (0154): find the call that blocks the boot thread */
+ 	sweet_usb_probe();
++	printf("Y2Q init: done\n");
+ 	return 0;
+ }
+ 
