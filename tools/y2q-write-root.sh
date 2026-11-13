@@ -6,6 +6,8 @@
 # Run from Git Bash on Windows with the phone in TWRP. Streams the image with `adb exec-in dd`, then
 # compares the SHA-256 of the written region with the image's. Only userdata is written.
 set -euo pipefail
+# Git Bash rewrites "/dev/..." and "of=/dev/..." in adb arguments into Windows paths: keep them as they are
+export MSYS_NO_PATHCONV=1
 ADB=${ADB:-adb}
 IMG=${1:-/home/W401/y2q-work/ios26-root-y2q.img}
 DEV=/dev/block/by-name/userdata

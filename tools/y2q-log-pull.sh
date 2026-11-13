@@ -7,6 +7,8 @@
 # Area layout (4 KiB blocks): block 0 = header "SWEETLOG" | u32 version | u32 ring size | u64 total | u64 seq,
 # blocks 1.. = the ring; byte n of the log is at ring offset n % ring size.
 set -euo pipefail
+# Git Bash rewrites "/dev/..." and "of=/dev/..." in adb arguments into Windows paths: keep them as they are
+export MSYS_NO_PATHCONV=1
 ADB=${ADB:-adb}
 DEV=/dev/block/by-name/userdata
 OUT=${1:-y2q-xnu-$(date +%Y%m%d-%H%M%S).log}

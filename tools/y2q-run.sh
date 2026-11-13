@@ -9,6 +9,8 @@
 # by itself. If it does not: hold Volume Down + Power to restart, then Volume Up + Power for recovery.
 # Only the boot partition is ever written. BACKUP_BOOT must be the phone's own boot.img.
 set -euo pipefail
+# Git Bash rewrites "/dev/..." and "/tmp/..." in adb arguments into Windows paths: keep them as they are
+export MSYS_NO_PATHCONV=1
 ADB=${ADB:-adb}
 BOOT=/dev/block/by-name/boot
 BOOT_BYTES=67108864
