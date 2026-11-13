@@ -22,8 +22,16 @@ ARGS="$ARGS cs_integrity_skip=1 fips_mode=0x44"
 # SM8150-only hardware: off until each driver has a y2q port
 ARGS="$ARGS sweetgpu=0 hotmtl=0 sweetmtl=0 sweetusb=0 flamecpufreq=0"
 ARGS="$ARGS rmxtouch=0 flametouch=0 sweettouch=0 rmxaudio=0 rmxbattery=0 sweetbattery=0 rmxhaptic=0 rmxtorch=0"
-# never write the phone's storage in this phase
-ARGS="$ARGS ufsrw=0 sweetlog=0"
+if [ -n "${ROOT:-}" ]; then
+	# ROOT=1: the iOS root image is on userdata (tools/y2q-build-rootfs.sh, written from TWRP). The root is
+	# mounted read-write, and the console log goes to the last 4 MiB + 4 KiB of userdata every
+	# ufslogsecs seconds (bsd/dev/sweet_ufs.c "sweetlog"), past the 28 GiB image: tools/y2q-log-pull.sh reads it.
+	ARGS="$ARGS rd=ufsroot0 ufsrw=1 rootrw=1 ufslogsecs=5"
+	ARGS="$ARGS ignition_level=1 launchd_unsecure_cache=1 unentitled_ios_sim_launch=1 wdt_test=no_user_checkin"
+else
+	# never write the phone's storage
+	ARGS="$ARGS ufsrw=0 sweetlog=0"
+fi
 ARGS="$ARGS flamereboot=${FLAMEREBOOT:-90} $*"
 
 python3 tools/mkpayload.py "$KERNEL" work/boot/y2q-d421ap.adt work/boot/payload-y2q.bin --cmdline "$ARGS"
