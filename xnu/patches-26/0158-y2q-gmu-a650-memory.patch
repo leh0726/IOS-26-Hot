@@ -1,0 +1,22 @@
+diff --git a/bsd/dev/sweet_a6xx.c b/bsd/dev/sweet_a6xx.c
+index a072a69..05a145b 100644
+--- a/bsd/dev/sweet_a6xx.c
++++ b/bsd/dev/sweet_a6xx.c
+@@ -106,7 +106,7 @@ static void zero_pa(uint64_t pa, uint64_t size)
+ #define GMEM_HFI(g)	a6_pool_pa(g, 0x95000)
+ 
+ #define VA_ICACHE	0x4000u
+-#define VA_DCACHE	0x44000u
++#define VA_DCACHE	0x144000u	/* y2q A650: the firmware's 0x144000..0x160000 (no dcache on the A650) */
+ #define CACHE_SIZE	0x3c000u
+ #define VA_DUMMY	0x60000000u
+ #define VA_LOG		A6_GMU_LOG_VA
+@@ -401,6 +401,8 @@ static int fw_load(struct a6_gpu *g)
+ 		uint64_t dst = 0;
+ 		if (addr < 0x4000)
+ 			dst = GMU_REG(GMU_ITCM) + addr;
++		else if (addr >= 0x10004000 && addr + size <= 0x10008000)	/* A650 DTCM */
++			dst = GMU_REG(GMU_DTCM) + (addr - 0x10004000);
+ 		else if (addr >= 0x40000 && addr < 0x44000)
+ 			dst = GMU_REG(GMU_DTCM) + (addr - 0x40000);
+ 		else if (addr >= VA_ICACHE && addr + size <= VA_ICACHE + CACHE_SIZE)
