@@ -1,0 +1,85 @@
+diff --git a/osfmk/arm64/machine_routines.c b/osfmk/arm64/machine_routines.c
+index 8affeb5..30622d9 100644
+--- a/osfmk/arm64/machine_routines.c
++++ b/osfmk/arm64/machine_routines.c
+@@ -400,6 +400,30 @@ machine_idle(void)
+ 			y2q_gic_dump("idle");
+ 		}
+ 	}
++#endif
++#if defined(SWEET)
++	if (cpu_number() == 1) {
++		/* y2q SMP bring-up (0158): cpu1 (spinning idle with wfi=0) reports cpu0 every 0.5 s */
++		extern void y2q_gic_peek(unsigned int idx, uint32_t out[3]);
++		extern uint32_t y2q_last_irq_id[8];
++		extern uint64_t y2q_last_irq_t[8];
++		static uint64_t y2q_watch_next;
++		static unsigned int y2q_watch_n;
++		uint64_t now = __builtin_arm_rsr64("CNTVCT_EL0");
++		if (now >= y2q_watch_next && y2q_watch_n < 24) {
++			uint32_t g[3];
++			cpu_data_t *c0 = cpu_datap(0);
++			y2q_watch_next = now + 9600000;
++			y2q_watch_n++;
++			y2q_gic_peek(0, g);
++			kprintf("Y2Q WATCH %llx cpu0 en %x pend %x act %x dec 0x%x dl %llx sig %x lastirq %u @%llx\n",
++			    (unsigned long long)now, g[0], g[1], g[2],
++			    c0 ? (unsigned)c0->cpu_decrementer : 0u,
++			    c0 ? (unsigned long long)c0->rtclock_timer.deadline : 0ull,
++			    c0 ? (unsigned)c0->cpu_signal : 0u,
++			    y2q_last_irq_id[0], (unsigned long long)y2q_last_irq_t[0]);
++		}
++	}
+ #endif
+ 	/* Check for, and act on, a WFE recommendation.
+ 	 * Bypasses context spill/fill for a minor perf. increment.
+@@ -2510,6 +2534,8 @@ ml_interrupt_prewarm(__unused uint64_t deadline)
+ #if defined(SWEET)
+ /* y2q SMP bring-up trace (0157): set by SweetCPU::initCPU on the first secondary */
+ int _Atomic y2q_smp_trace;
++uint32_t y2q_last_irq_id[8];
++uint64_t y2q_last_irq_t[8];
+ uint32_t _Atomic y2q_smp_budget;
+ #endif
+ 
+diff --git a/osfmk/arm64/sleh.c b/osfmk/arm64/sleh.c
+index 009267e..3cabe6b 100644
+--- a/osfmk/arm64/sleh.c
++++ b/osfmk/arm64/sleh.c
+@@ -4032,6 +4032,12 @@ sleh_irq(arm_saved_state_t *state)
+ 		unsigned int y2q_cpu = (unsigned int)cpu_number();
+ 		unsigned int y2q_kind = (intid == sweet_vtimer_intid) ? 0 : (intid < 16 ? 1 : 2);
+ 		extern int _Atomic y2q_smp_trace;
++		extern uint32_t y2q_last_irq_id[8];
++		extern uint64_t y2q_last_irq_t[8];
++		if (y2q_cpu < 8) {
++			y2q_last_irq_id[y2q_cpu] = intid;
++			y2q_last_irq_t[y2q_cpu] = __builtin_arm_rsr64("CNTVCT_EL0");
++		}
+ 		extern uint32_t _Atomic y2q_smp_budget;
+ 		if (os_atomic_load(&y2q_smp_trace, relaxed) &&
+ 		    os_atomic_inc_orig(&y2q_smp_budget, relaxed) < 48) {
+diff --git a/pexpert/arm/pe_fiq.c b/pexpert/arm/pe_fiq.c
+index abcc544..dbb8326 100644
+--- a/pexpert/arm/pe_fiq.c
++++ b/pexpert/arm/pe_fiq.c
+@@ -246,4 +246,19 @@ y2q_gic_dump(const char *tag)
+ 	    gicr_read32(0x10200), gicr_read32(0x10300), gicr_read32(0x10C04),
+ 	    gicr_read32(GICR_IPRIORITYR0 + 16), gicd_read32(GICD_CTLR));
+ }
++
++/* y2q SMP bring-up (0158): enable/pending/active of redistributor frame idx (another CPU) */
++void y2q_gic_peek(unsigned int idx, uint32_t out[3]);
++void
++y2q_gic_peek(unsigned int idx, uint32_t out[3])
++{
++	out[0] = out[1] = out[2] = 0xdeadbeef;
++	if (gicr_base == 0 || (vm_offset_t)idx * GICR_PE_SIZE >= gicr_size) {
++		return;
++	}
++	vm_offset_t gicr_pe_base = gicr_base + (vm_offset_t)idx * GICR_PE_SIZE;
++	out[0] = gicr_read32(GICR_ISENABLER0);
++	out[1] = gicr_read32(0x10200);
++	out[2] = gicr_read32(0x10300);
++}
+ #endif /* SWEET */
