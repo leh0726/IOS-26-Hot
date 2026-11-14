@@ -1,0 +1,63 @@
+From f5e3debc33d5e1bb1f5a32ba9381881370429796 Mon Sep 17 00:00:00 2001
+From: y2q <y2q@local>
+Date: Sun, 15 Nov 2026 00:12:45 +0900
+Subject: [PATCH] y2q: y2qgpuhigh=0 leaves the high GPU pool range out
+
+---
+ bsd/dev/sweet_gpu.c | 19 +++++++++++++++++--
+ 1 file changed, 17 insertions(+), 2 deletions(-)
+
+diff --git a/bsd/dev/sweet_gpu.c b/bsd/dev/sweet_gpu.c
+index 6d20951..684e8d0 100644
+--- a/bsd/dev/sweet_gpu.c
++++ b/bsd/dev/sweet_gpu.c
+@@ -1066,6 +1066,18 @@ static const struct { uint64_t pa, size; } gpool_ranges[] = {
+ 	 * the RAM above (dt memory ends 0x3_80000000, no fixed carve-out there) is the pool's, inside is_dram_addr */
+ 	{ 0x300000000ULL, 0x7c000000ULL },     /* 1984 MB (the top 64 MB left alone) */
+ };
++/* y2q (0185): boot-arg y2qgpuhigh=0 leaves the 0x3_00000000 range out (freeze/fault hunt) */
++static bool
++gpool_range_on(unsigned i)
++{
++	static int high = -1;
++	if (high < 0) {
++		int v = 1;
++		PE_parse_boot_argn("y2qgpuhigh", &v, sizeof(v));
++		high = v;
++	}
++	return high || gpool_ranges[i].pa < 0x300000000ULL;
++}
+ static struct { uint64_t pa, size; } gpool_free[GPOOL_FREE_MAX];       /* sorted by address, merged */
+ static uint32_t gpool_nfree;
+ static uint64_t gpool_used, gpool_peak, gpool_failures;
+@@ -1077,7 +1089,7 @@ sweet_gpu_pool_avail(void)
+ {
+ 	uint64_t total = 0;
+ 	for (unsigned i = 0; i < sizeof(gpool_ranges) / sizeof(gpool_ranges[0]); i++) {
+-		total += gpool_ranges[i].size;
++		total += gpool_range_on(i) ? gpool_ranges[i].size : 0;
+ 	}
+ 	return total - gpool_used;
+ }
+@@ -1094,6 +1106,9 @@ sweet_gpu_pool_try_alloc(uint64_t bytes, uint64_t *pa)
+ 	lck_mtx_lock(&sweet_gpool_lock);
+ 	if (!gpool_ready) {
+ 		for (unsigned i = 0; i < sizeof(gpool_ranges) / sizeof(gpool_ranges[0]); i++) {
++			if (!gpool_range_on(i)) {
++				continue;
++			}
+ 			gpool_free[gpool_nfree].pa = gpool_ranges[i].pa;
+ 			gpool_free[gpool_nfree].size = gpool_ranges[i].size;
+ 			gpool_nfree++;
+@@ -1440,7 +1455,7 @@ sweet_gpu_diag_snapshot(struct sweet_diag_gpu *out)
+ 	}
+ 	uint64_t total_pool = 0;
+ 	for (unsigned i = 0; i < sizeof(gpool_ranges) / sizeof(gpool_ranges[0]); i++) {
+-		total_pool += gpool_ranges[i].size;
++		total_pool += gpool_range_on(i) ? gpool_ranges[i].size : 0;
+ 	}
+ 	uint32_t cap = 384, resv = 160;
+ 	PE_parse_boot_argn("sweetgpucap", &cap, sizeof(cap));
+-- 
+2.53.0
+

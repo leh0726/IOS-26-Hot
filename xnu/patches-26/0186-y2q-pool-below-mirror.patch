@@ -1,0 +1,37 @@
+From 6459f37c4a415eeed832d2b005c6338c89c0c730 Mon Sep 17 00:00:00 2001
+From: y2q <y2q@local>
+Date: Sun, 15 Nov 2026 00:17:07 +0900
+Subject: [PATCH] y2q: GPU pool high range at 0x2_c0000000 (XNU 7 GB);
+ 0x3_00000000 up is not safe
+
+---
+ bsd/dev/sweet_gpu.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/bsd/dev/sweet_gpu.c b/bsd/dev/sweet_gpu.c
+index 684e8d0..c8da61e 100644
+--- a/bsd/dev/sweet_gpu.c
++++ b/bsd/dev/sweet_gpu.c
+@@ -1064,7 +1064,9 @@ static const struct { uint64_t pa, size; } gpool_ranges[] = {
+ 	{ 0xe1000000ULL, 0x1f000000ULL },       /* 496 MB */
+ 	/* y2q (0173): XNU takes 8 GB (0x1_00000000-0x2_fcc00000, mkadt); /pram, mirror and mailbox to 0x3_00000000;
+ 	 * the RAM above (dt memory ends 0x3_80000000, no fixed carve-out there) is the pool's, inside is_dram_addr */
+-	{ 0x300000000ULL, 0x7c000000ULL },     /* 1984 MB (the top 64 MB left alone) */
++	/* 0186: not 0x3_00000000 up (random SMMU faults, corrupt command streams: something else uses the top of
++	 * RAM); XNU takes 7 GB instead and this GB below /pram and the mirror is the pool's */
++	{ 0x2c0000000ULL, 0x3c000000ULL },     /* 960 MB */
+ };
+ /* y2q (0185): boot-arg y2qgpuhigh=0 leaves the 0x3_00000000 range out (freeze/fault hunt) */
+ static bool
+@@ -1076,7 +1078,7 @@ gpool_range_on(unsigned i)
+ 		PE_parse_boot_argn("y2qgpuhigh", &v, sizeof(v));
+ 		high = v;
+ 	}
+-	return high || gpool_ranges[i].pa < 0x300000000ULL;
++	return high || gpool_ranges[i].pa < 0x2c0000000ULL;
+ }
+ static struct { uint64_t pa, size; } gpool_free[GPOOL_FREE_MAX];       /* sorted by address, merged */
+ static uint32_t gpool_nfree;
+-- 
+2.53.0
+

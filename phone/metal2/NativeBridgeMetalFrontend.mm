@@ -424,7 +424,13 @@ NB_RESOURCE_SPI
 // owners keep the mapping live through this phase. Maintain each exact CPU
 // range once; no address identity or decision is carried into another phase
 // or command, and distinct/partially overlapping ranges retain their calls.
-static void flushSurfaces(NSMutableSet *surfaces) {
+// y2q: the CPU-side clean before a commit is skipped for a surface whose IOSurface seed (bumped by every CPU write unlock)
+// has not moved since this process last cleaned or invalidated it: nothing the CPU wrote can be pending in its caches.
+// GPU-only surfaces (the render server's layer and display targets) were cleaned whole, several times a frame (telemetry:
+// 48 GB in 106 s, up to 12 ms per flush). The invalidate after the GPU wrote stays, and records the seed it left.
+static std::mutex gSeedLock;
+static std::unordered_map<uint32_t,uint32_t> gCleanSeed;
+static void flushSurfaces(NSMutableSet *surfaces,bool afterGpuWrite=false) {
  if(!surfaces.count)return;
  std::vector<std::pair<uintptr_t,size_t>> ranges;
  ranges.reserve(surfaces.count);
@@ -433,6 +439,18 @@ static void flushSurfaces(NSMutableSet *surfaces) {
   IOSurfaceRef surface=[item isKindOfClass:[NBTexture class]]?[(NBTexture *)item surface]:
                        ([item isKindOfClass:[NBBuffer class]]?[(NBBuffer *)item surfaceOwner]:nullptr);
   if(!surface)continue;
+  {
+   const uint32_t sid=IOSurfaceGetID(surface),seed=IOSurfaceGetSeed(surface);
+   std::lock_guard<std::mutex> hold(gSeedLock);
+   if(afterGpuWrite) {
+    gCleanSeed[sid]=seed;
+   } else {
+    auto known=gCleanSeed.find(sid);
+    if(known!=gCleanSeed.end() && known->second==seed){gSurfaceFlushDuplicates++;continue;}
+    gCleanSeed[sid]=seed;
+    if(gCleanSeed.size()>4096)gCleanSeed.clear();
+   }
+  }
   void *rawBase=IOSurfaceGetBaseAddress(surface);
   const size_t allocation=IOSurfaceGetAllocSize(surface);
   if(!rawBase || !allocation)continue;
@@ -1452,7 +1470,7 @@ static void scheduled(void *context);
 }
 // After completion (or a refusal): invalidate the CPU's view of GPU-written imported surfaces, then completed handlers, once.
 - (void)finish {
- if(!self.failedLocally)flushSurfaces(_writtenSurfaces);
+ if(!self.failedLocally)flushSurfaces(_writtenSurfaces,true);
  // Actual GPU completion (or a local refusal that never submitted) is the
  // release point. A retained completed command must not pin every old frame.
  [_surfaces removeAllObjects];[_writtenSurfaces removeAllObjects];[_resourceOwners removeAllObjects];

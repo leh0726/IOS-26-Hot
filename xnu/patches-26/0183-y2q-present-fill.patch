@@ -1,0 +1,61 @@
+From 9c0536109fcbcfe9f81dd452ff63d89d758e1cde Mon Sep 17 00:00:00 2001
+From: y2q <y2q@local>
+Date: Sat, 14 Nov 2026 21:40:25 +0900
+Subject: [PATCH] y2q: present fills the panel (crop the canvas sides), no
+ letterbox
+
+---
+ bsd/dev/sweet_gpu.c | 29 +++++++++++++++++++++++++++--
+ 1 file changed, 27 insertions(+), 2 deletions(-)
+
+diff --git a/bsd/dev/sweet_gpu.c b/bsd/dev/sweet_gpu.c
+index 0cc15ca..6d20951 100644
+--- a/bsd/dev/sweet_gpu.c
++++ b/bsd/dev/sweet_gpu.c
+@@ -682,6 +682,31 @@ sweet_gpu_present(int s, uintptr_t kva, uint32_t offset, uint32_t w, uint32_t h,
+ 	}
+ 	frame.dx = (PANEL_W - frame.dw) / 2;
+ 	frame.dy = (PANEL_H - frame.dh) / 2;
++	/*
++	 * y2q (0183): fill instead of fit (boot-arg sweetfb_fill=0: fit). The 1125x2436 canvas is a little narrower
++	 * than the 20:9 panel: full height, and the source's sides cropped (14 px each) rather than 41 px bars above
++	 * and below. The reported rectangle is the whole scaled frame (x may be negative) so that touch maps right.
++	 */
++	int32_t rep_dx = (int32_t)frame.dx, rep_dw = (int32_t)frame.dw;
++	static int fill = -1;
++	if (fill < 0) {
++		int v = 1;
++		PE_parse_boot_argn("sweetfb_fill", &v, sizeof(v));
++		fill = v;
++	}
++	if (fill && frame.dh < PANEL_H && (uint64_t)w * PANEL_H > (uint64_t)PANEL_W * h) {
++		uint32_t sw = (uint32_t)(((uint64_t)PANEL_W * h + PANEL_H / 2) / PANEL_H);
++		if (sw >= 16 && sw < w) {
++			frame.sx = (w - sw) / 2;
++			frame.sw = sw;
++			frame.dx = 0;
++			frame.dy = 0;
++			frame.dw = PANEL_W;
++			frame.dh = PANEL_H;
++			rep_dw = (int32_t)(((uint64_t)w * PANEL_H + h / 2) / h);
++			rep_dx = -(rep_dw - (int32_t)PANEL_W) / 2;
++		}
++	}
+ 	uint32_t ext = corner_radius ? sweet_display_corner_extent(corner_radius) : 0;
+ 	if (ext > DISPLAY_MASK_SIDE || 2 * ext >= frame.dw || 2 * ext >= frame.dh) {
+ 		ext = 0;
+@@ -822,9 +847,9 @@ sweet_gpu_present(int s, uintptr_t kva, uint32_t offset, uint32_t w, uint32_t h,
+ 		    stat_last_clean_us, stat_last_blit_us);
+ 		stat_clean_abs = stat_gpu_abs = 0;
+ 	}
+-	*out_dx = frame.dx;
++	*out_dx = (uint32_t)rep_dx;
+ 	*out_dy = frame.dy;
+-	*out_dw = frame.dw;
++	*out_dw = (uint32_t)rep_dw;
+ 	*out_dh = frame.dh;
+ 	return rc;
+ }
+-- 
+2.53.0
+
