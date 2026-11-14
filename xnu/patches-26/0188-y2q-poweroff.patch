@@ -1,0 +1,112 @@
+From d86fe6ed11819b101f015ef227caa45b40076446 Mon Sep 17 00:00:00 2001
+From: y2q <y2q@local>
+Date: Sun, 15 Nov 2026 01:29:17 +0900
+Subject: [PATCH] y2q: power off / restart through the PM8150 PON PS_HOLD reset
+ type
+
+---
+ iokit/Kernel/arm/SweetPlatformExpert.cpp | 81 ++++++++++++++++++++++++
+ 1 file changed, 81 insertions(+)
+
+diff --git a/iokit/Kernel/arm/SweetPlatformExpert.cpp b/iokit/Kernel/arm/SweetPlatformExpert.cpp
+index 72e76d7..b173f31 100644
+--- a/iokit/Kernel/arm/SweetPlatformExpert.cpp
++++ b/iokit/Kernel/arm/SweetPlatformExpert.cpp
+@@ -149,6 +149,82 @@ SweetPlatformExpert::setGMTTimeOfDay(long secs)
+ 	}
+ }
+ 
++/*
++ * y2q (0188): power off and restart. PE_halt_restart had no handler: "slide to power off" did nothing.
++ * As Linux's qcom pon/msm-poweroff: the PM8150 PON PS_HOLD reset type (0x85a [3:0]; 0x85b bit 7 enable,
++ * disabled while it changes) SHUTDOWN (4) to power off or HARD_RESET (7) to restart, then PS_HOLD
++ * (TLMM 0x0c264000) low. SPMI writes go through the owner channel of the PON's APID (EE 0), as in the
++ * shim's spmi.c. All mapped at start: nothing is allocated on the way down.
++ */
++#define Y2Q_SPMI_CORE_PA        0x0c440000ull
++#define Y2Q_SPMI_CNFG_PA        0x0c40a000ull
++#define Y2Q_SPMI_CHNLS_PA       0x0c600000ull
++#define Y2Q_PS_HOLD_PA          0x0c264000ull
++#define Y2Q_PON_PS_HOLD_CTL     0x85a
++#define Y2Q_PON_PS_HOLD_CTL2    0x85b
++static volatile uint8_t *y2q_pon_ch;    /* owner channel of SID 0 peripheral 0x08 (PON) */
++static volatile uint32_t *y2q_ps_hold;
++
++static void
++y2q_poweroff_prepare(void)
++{
++	volatile uint32_t *core = (volatile uint32_t *)ml_io_map(Y2Q_SPMI_CORE_PA, 0x2000);
++	volatile uint32_t *cnfg = (volatile uint32_t *)ml_io_map(Y2Q_SPMI_CNFG_PA, 0x1000);
++	y2q_ps_hold = (volatile uint32_t *)ml_io_map(Y2Q_PS_HOLD_PA, 0x1000);
++	if (core == NULL || cnfg == NULL) {
++		return;
++	}
++	uint32_t napids = core[1] & 0x7ffu;
++	for (uint32_t i = 0; i < napids && i < 512; i++) {
++		uint32_t map = core[(0x900u + 4u * i) / 4u];
++		if (map != 0 && ((map >> 8) & 0xfffu) == 0x008u && (cnfg[(0x700u + 4u * i) / 4u] & 7u) == 0) {
++			y2q_pon_ch = (volatile uint8_t *)ml_io_map(Y2Q_SPMI_CHNLS_PA + 0x10000ull * i, 0x1000);
++			IOLog("SWEET POWER: PON APID %u, power off ready\n", i);
++			return;
++		}
++	}
++	IOLog("SWEET POWER: no PON APID owned by EE 0\n");
++}
++
++static int
++y2q_pon_write(uint32_t addr, uint8_t val)
++{
++	if (y2q_pon_ch == NULL) {
++		return -1;
++	}
++	*(volatile uint32_t *)(y2q_pon_ch + 0x10) = val;
++	__asm__ volatile("dsb sy" ::: "memory");
++	*(volatile uint32_t *)(y2q_pon_ch + 0x00) = (0u << 27) | ((addr & 0xffu) << 4);  /* EXT_WRITEL */
++	__asm__ volatile("dsb sy" ::: "memory");
++	for (int i = 0; i < 100000; i++) {
++		uint32_t st = *(volatile uint32_t *)(y2q_pon_ch + 0x08);
++		if (st & 1u) {
++			return (st & 0x0eu) ? -1 : 0;
++		}
++	}
++	return -1;
++}
++
++static int
++y2q_halt_restart(unsigned int type)
++{
++	uint8_t kind = (type == kPEHaltCPU || type == kPEUPSDelayHaltCPU) ? 4 : 7;   /* SHUTDOWN : HARD_RESET */
++	(void)y2q_pon_write(Y2Q_PON_PS_HOLD_CTL2, 0x00);
++	for (volatile int i = 0; i < 2000000; i++) {
++	}
++	(void)y2q_pon_write(Y2Q_PON_PS_HOLD_CTL, kind);
++	(void)y2q_pon_write(Y2Q_PON_PS_HOLD_CTL2, 0x80);
++	if (y2q_ps_hold != NULL) {
++		__asm__ volatile("dsb sy" ::: "memory");
++		*y2q_ps_hold = 0;                       /* PS_HOLD low: the PMIC does the rest */
++		__asm__ volatile("dsb sy" ::: "memory");
++	}
++	for (;;) {
++		__asm__ volatile("wfe");
++	}
++	return 0;
++}
++
+ extern "C" void sweet_log_mirror_start(void);
+ extern "C" void sweet_poke_start(void);
+ 
+@@ -168,6 +244,11 @@ SweetPlatformExpert::start(IOService *provider)
+ 	if (has_ufs) {
+ 		flame_wdt_start();
+ 	}
++	if (has_ufs) {
++		extern int (*PE_halt_restart)(unsigned int type);
++		y2q_poweroff_prepare();
++		PE_halt_restart = y2q_halt_restart;     /* y2q 0188 */
++	}
+ 	sweet_poke_start();             /* register scripts: bsd/dev/sweet_poke.c */
+ 	uint32_t rtc = 0;
+ 	uint8_t ctrl = 0;
+-- 
+2.53.0
+
