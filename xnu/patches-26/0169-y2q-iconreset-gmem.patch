@@ -1,0 +1,93 @@
+From 188f775707006765b793eb12930133915197abd2 Mon Sep 17 00:00:00 2001
+From: y2q <y2q@local>
+Date: Sat, 14 Nov 2026 10:05:24 +0900
+Subject: [PATCH] y2q: y2qiconreset (move icon caches aside), y2qgmem (GMEM
+ size for Turnip)
+
+---
+ bsd/kern/bsd_init.c                   |  4 +++
+ bsd/vfs/vfs_syscalls.c                | 35 +++++++++++++++++++++++++++
+ iokit/Kernel/arm/SweetAccelerator.cpp |  6 +++++
+ 3 files changed, 45 insertions(+)
+
+diff --git a/bsd/kern/bsd_init.c b/bsd/kern/bsd_init.c
+index 4299a0e..adaa802 100644
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -1151,6 +1151,10 @@ bsdinit_task(void)
+ 		}
+ 		(void)sweet_ensure_dir_mode("/private/var/local", 0777);
+ 		sweet_apply_overlay();
++		{
++			extern void sweet_icon_cache_reset(void);
++			sweet_icon_cache_reset();        /* y2q 0169 */
++		}
+ 		sweet_files_start();
+ 		int e1 = sweet_ensure_dir_mode("/private/var/local", 0777);
+ 		int e2 = sweet_ensure_dir_mode("/private/var/local/m2v-cache", 0777);
+diff --git a/bsd/vfs/vfs_syscalls.c b/bsd/vfs/vfs_syscalls.c
+index 238773c..7bc5c62 100644
+--- a/bsd/vfs/vfs_syscalls.c
++++ b/bsd/vfs/vfs_syscalls.c
+@@ -15678,6 +15678,41 @@ sweet_vfs_unlink(const char *path)
+ 	return unlink1(vfs_context_kernel(), NULLVP, CAST_USER_ADDR_T(path), UIO_SYSSPACE, 0);
+ }
+ 
++/*
++ * y2q (0169): boot-arg y2qiconreset=1 moves the icon caches aside before launchd, so that icons rendered
++ * wrong by an earlier GPU state are drawn again (each to <dir>.old<N>; nothing is deleted).
++ */
++void sweet_icon_cache_reset(void);
++void
++sweet_icon_cache_reset(void)
++{
++	static const char *const dirs[] = {
++		"/private/var/containers/Shared/SystemGroup/systemgroup.com.apple.lsd.iconscache/Library/Caches/com.apple.IconsCache",
++		"/private/var/containers/Shared/SystemGroup/systemgroup.com.apple.lsd.iconscache/Library/Caches",
++		"/private/var/mobile/Library/Caches/com.apple.IconsCache",
++		"/private/var/mobile/Library/Caches/com.apple.iconservices",
++		"/private/var/mobile/Library/Caches/com.apple.springboard/SBIconImageCache",
++		"/private/var/mobile/Library/SpringBoard/IconImageCache",
++	};
++	uint32_t on = 0;
++	if (!PE_parse_boot_argn("y2qiconreset", &on, sizeof(on)) || !on) {
++		return;
++	}
++	static char to[320];
++	for (unsigned i = 0; i < sizeof(dirs) / sizeof(dirs[0]); i++) {
++		int e = -1;
++		for (unsigned n = 0; n < 100 && e != 0 && e != ENOENT; n++) {
++			snprintf(to, sizeof(to), "%s.old%u", dirs[i], n);
++			e = renameat_internal(vfs_context_kernel(), AT_FDCWD, CAST_USER_ADDR_T(dirs[i]), AT_FDCWD,
++			    CAST_USER_ADDR_T(to), UIO_SYSSPACE, 0);
++			if (e != EEXIST && e != ENOTEMPTY) {
++				break;
++			}
++		}
++		printf("SWEET: icon cache %s -> %s (%d)\n", dirs[i], e == 0 ? to : (e == ENOENT ? "(none)" : "rename failed"), e);
++	}
++}
++
+ static uint64_t
+ sweet_ov_octal(const uint8_t *p, size_t n)
+ {
+diff --git a/iokit/Kernel/arm/SweetAccelerator.cpp b/iokit/Kernel/arm/SweetAccelerator.cpp
+index 00e495b..2b49af4 100644
+--- a/iokit/Kernel/arm/SweetAccelerator.cpp
++++ b/iokit/Kernel/arm/SweetAccelerator.cpp
+@@ -948,6 +948,12 @@ SweetAcceleratorUserClient::v2Method(uint32_t method, const void *in, uint32_t i
+ 		 * UBWC 3 with highest bank bit 16 (lvl 2+3 swizzle) */
+ 		rp->chip_id = 0x06050002;
+ 		rp->gmem_bytes = 0x120000;
++		{	/* y2q (0169): boot-arg y2qgmem=<bytes> tells Turnip another GMEM size (stripes hunt) */
++			uint32_t g = 0;
++			if (PE_parse_boot_argn("y2qgmem", &g, sizeof(g)) && g >= 0x40000 && g <= 0x120000) {
++				rp->gmem_bytes = g;
++			}
++		}
+ 		rp->gmem_base = 0x100000;
+ 		rp->uche_trap_base = 0x1fffffffff000ULL;
+ 		rp->va_start = fWinBase;
+-- 
+2.53.0
+

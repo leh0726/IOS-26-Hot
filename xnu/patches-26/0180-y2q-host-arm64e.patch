@@ -1,0 +1,39 @@
+From 2fa971fd96b68b6a5bee69ce885c0c5ea289c5d0 Mon Sep 17 00:00:00 2001
+From: y2q <y2q@local>
+Date: Sat, 14 Nov 2026 20:34:48 +0900
+Subject: [PATCH] y2q: host_info reports an arm64e host (MobileGestalt arm64e
+ capability)
+
+---
+ osfmk/kern/host.c | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/osfmk/kern/host.c b/osfmk/kern/host.c
+index 891abed..734a733 100644
+--- a/osfmk/kern/host.c
++++ b/osfmk/kern/host.c
+@@ -224,6 +224,21 @@ host_info(host_t host, host_flavor_t flavor, host_info_t info, mach_msg_type_num
+ 		basic_info->memory_size = machine_info.memory_size;
+ 		basic_info->cpu_type = slot_type(master_id);
+ 		basic_info->cpu_subtype = slot_subtype(master_id);
++#if defined(ARM64_BOARD_CONFIG_SWEET)
++		{	/* y2q (0180): user space sees an arm64e host. MobileGestalt answers its "arm64e" device capability
++			 * from here, and installd dropped every extension requiring it (wallpaper providers, most widgets).
++			 * Exec grading still uses the real subtype (0129). Boot-arg y2qarm64e=0 turns this off. */
++			static int y2q_arm64e = -1;
++			if (y2q_arm64e < 0) {
++				int v = 1;
++				PE_parse_boot_argn("y2qarm64e", &v, sizeof(v));
++				y2q_arm64e = v;
++			}
++			if (y2q_arm64e && basic_info->cpu_type == CPU_TYPE_ARM64) {
++				basic_info->cpu_subtype = CPU_SUBTYPE_ARM64E;
++			}
++		}
++#endif
+ 		basic_info->max_cpus = machine_info.max_cpus;
+ #if CONFIG_SCHED_SMT
+ 		if (sched_allow_NO_SMT_threads && current_task()->t_flags & TF_NO_SMT) {
+-- 
+2.53.0
+

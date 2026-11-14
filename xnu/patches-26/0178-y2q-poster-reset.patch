@@ -1,0 +1,74 @@
+From f06cdc1707da736dd2422c8d7e16b3c493a15588 Mon Sep 17 00:00:00 2001
+From: y2q <y2q@local>
+Date: Sat, 14 Nov 2026 19:54:53 +0900
+Subject: [PATCH] y2q: y2qposterreset moves the PosterBoard data store aside
+
+---
+ bsd/kern/bsd_init.c    |  2 ++
+ bsd/vfs/vfs_syscalls.c | 37 +++++++++++++++++++++++++++++++++++++
+ 2 files changed, 39 insertions(+)
+
+diff --git a/bsd/kern/bsd_init.c b/bsd/kern/bsd_init.c
+index adaa802..00759c2 100644
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -1154,6 +1154,8 @@ bsdinit_task(void)
+ 		{
+ 			extern void sweet_icon_cache_reset(void);
+ 			sweet_icon_cache_reset();        /* y2q 0169 */
++			extern void sweet_poster_reset(void);
++			sweet_poster_reset();            /* y2q 0178 */
+ 		}
+ 		sweet_files_start();
+ 		int e1 = sweet_ensure_dir_mode("/private/var/local", 0777);
+diff --git a/bsd/vfs/vfs_syscalls.c b/bsd/vfs/vfs_syscalls.c
+index 7bc5c62..64d6a05 100644
+--- a/bsd/vfs/vfs_syscalls.c
++++ b/bsd/vfs/vfs_syscalls.c
+@@ -15682,6 +15682,43 @@ sweet_vfs_unlink(const char *path)
+  * y2q (0169): boot-arg y2qiconreset=1 moves the icon caches aside before launchd, so that icons rendered
+  * wrong by an earlier GPU state are drawn again (each to <dir>.old<N>; nothing is deleted).
+  */
++/* y2q (0178): boot-arg y2qposterreset=1 moves PosterBoard's data store aside (its 59->61 migration failed: no wallpapers) */
++static void
++sweet_move_aside(const char *const *dirs, unsigned n, const char *what)
++{
++	static char to[320];
++	for (unsigned i = 0; i < n; i++) {
++		int e = -1;
++		for (unsigned k = 0; k < 100 && e != 0 && e != ENOENT; k++) {
++			snprintf(to, sizeof(to), "%s.old%u", dirs[i], k);
++			e = renameat_internal(vfs_context_kernel(), AT_FDCWD, CAST_USER_ADDR_T(dirs[i]), AT_FDCWD,
++			    CAST_USER_ADDR_T(to), UIO_SYSSPACE, 0);
++			if (e != EEXIST && e != ENOTEMPTY) {
++				break;
++			}
++		}
++		printf("SWEET: %s %s -> %s (%d)\n", what, dirs[i], e == 0 ? to : (e == ENOENT ? "(none)" : "rename failed"), e);
++	}
++}
++
++void sweet_poster_reset(void);
++void
++sweet_poster_reset(void)
++{
++	static const char *const dirs[] = {
++		"/private/var/mobile/Library/Application Support/PosterBoard",
++		"/private/var/mobile/Library/Application Support/com.apple.PosterBoard",
++		"/private/var/mobile/Library/Application Support/PRBPosterExtensionDataStore",
++		"/private/var/mobile/Library/Application Support/PosterBoardServices",
++		"/private/var/mobile/Library/Preferences/com.apple.PosterBoard.unprotectedUserDefaults.plist",
++		"/private/var/mobile/Library/Preferences/com.apple.PosterBoard.plist",
++	};
++	uint32_t on = 0;
++	if (PE_parse_boot_argn("y2qposterreset", &on, sizeof(on)) && on) {
++		sweet_move_aside(dirs, sizeof(dirs) / sizeof(dirs[0]), "poster store");
++	}
++}
++
+ void sweet_icon_cache_reset(void);
+ void
+ sweet_icon_cache_reset(void)
+-- 
+2.53.0
+

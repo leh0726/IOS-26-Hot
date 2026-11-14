@@ -490,8 +490,17 @@ def main():
     ap.add_argument('--wland-wrapper', help='optional wrapper path for org.iosonpixel.wland ProgramArguments[0]')
     ap.add_argument('--selftest-bin', help='optional compiled arm64 self-test Mach-O for guarded test boots')
     ap.add_argument('--selftest-script', help='optional bring-up self-test shell script for guarded test boots')
+    ap.add_argument('--selftest-out', default='/var/local/selftest.log',
+                    help='self-test stdout/stderr (/dev/console: into the kernel log, which tools/y2q-log-pull.sh reads)')
+    ap.add_argument('--selftest-args', help='extra arguments for the self-test binary (space separated)')
+    ap.add_argument('--selftest-toybox', action='store_true',
+                    help='run --selftest-script as "toybox sh SCRIPT" (bin/toybox in --userland-dir; a sh symlink '
+                         'reaches toybox with argv[0] "toybox", which it refuses)')
     ap.add_argument('--y2q-minimal', action='store_true',
                     help='y2q (SM-G986N): no wland/dropbear/hotstored/hotauthd daemons (no such hardware or binaries)')
+    ap.add_argument('--y2q-store', action='store_true',
+                    help='with --y2q-minimal: keep hotstored (needs bin/hotstored + bin/lsreg in --userland-dir), '
+                         'which promotes the stock removable apps to /Applications on first boot')
     ap.add_argument('--extra', action='append', default=[],
                     help='extra file SRC:DST[:OCTAL_MODE] to include in the overlay (repeatable)')
     args = ap.parse_args()
@@ -656,7 +665,9 @@ def main():
                   '/System/Library/LaunchDaemons/org.iosonpixel.dropbear.plist'):
             jobs.pop(k, None)
     # Ensure hotstored root helper is registered for HotStore.app (127.0.0.1:29170).
-    if not args.y2q_minimal:
+    # y2q --y2q-store: kept for its first-boot job alone (promote /private/var/staged_system_apps into /Applications,
+    # lsreg -r): without it the y2q home screen has only the non-removable apps (Phone, Settings).
+    if not args.y2q_minimal or args.y2q_store:
         jobs['/System/Library/LaunchDaemons/com.ios26hot.hotstored.plist'] = {
         'EnvironmentVariables': {'PATH': '/var/local/bin:/usr/bin:/bin:/usr/sbin:/sbin'},
         'KeepAlive': True,
@@ -722,7 +733,9 @@ def main():
 
     if args.selftest_bin or args.selftest_script:
         prog_args = (['/private/var/local/bin/sweet-selftest'] if args.selftest_bin
-                     else ['/private/var/local/bin/sh', '/private/var/local/bin/sweet-selftest.sh'])
+                     else (['/private/var/local/bin/toybox', 'sh', '/private/var/local/bin/sweet-selftest.sh']
+                           if args.selftest_toybox else
+                           ['/private/var/local/bin/sh', '/private/var/local/bin/sweet-selftest.sh']))
         jobs['/System/Library/LaunchDaemons/org.iosonpixel.selftest.plist'] = {
             'EnvironmentVariables': {'PATH': '/private/var/local/bin:/var/local/bin:/usr/bin:/bin:/usr/sbin:/sbin'},
             'KeepAlive': False,
@@ -730,10 +743,13 @@ def main():
             'ProcessType': 'Interactive',
             'ProgramArguments': prog_args,
             'RunAtLoad': True,
-            'StandardErrorPath': '/var/local/selftest.log',
-            'StandardOutPath': '/var/local/selftest.log',
+            'StandardErrorPath': args.selftest_out,
+            'StandardOutPath': args.selftest_out,
             'UserName': 'root',
         }
+        if args.selftest_args:
+            jobs['/System/Library/LaunchDaemons/org.iosonpixel.selftest.plist']['ProgramArguments'] = \
+                prog_args + args.selftest_args.split()
 
     after_count = len(jobs)
     y2q_dropped = ('org.iosonpixel.dropbear.plist', 'org.iosonpixel.wland.plist',

@@ -1,0 +1,42 @@
+From 86bf5871a2ff7573b0437e51176977f1a7a4463a Mon Sep 17 00:00:00 2001
+From: y2q <y2q@local>
+Date: Sat, 14 Nov 2026 19:27:44 +0900
+Subject: [PATCH] y2q: cpufreq diagnostics (regs, measured MHz)
+
+---
+ bsd/dev/sweet_cpufreq.c | 19 +++++++++++++++++++
+ 1 file changed, 19 insertions(+)
+
+diff --git a/bsd/dev/sweet_cpufreq.c b/bsd/dev/sweet_cpufreq.c
+index c58cfc5..323f517 100644
+--- a/bsd/dev/sweet_cpufreq.c
++++ b/bsd/dev/sweet_cpufreq.c
+@@ -247,6 +247,25 @@ sweet_cpufreq_init(void)
+ 		    osm_tier_mhz[c][OSM_TIER_SLEEP], osm_tier_mhz[c][OSM_TIER_IDLE], osm_tier_mhz[c][OSM_TIER_ACTIVE]);
+ 	}
+ 
++	/* y2q (0174): what the hardware says, and the boot CPU's real speed (a chain of dependent adds, 1 per cycle) */
++	for (unsigned c = 0; c < OSM_CLUSTERS; ++c) {
++		if (osm_base[c]) {
++			printf("SWEET CPUFREQ: %s regs: enable %#x perf_state %#x current_vote(0x704) %#x 0x700 %#x 0x708 %#x\n",
++			    osm_clusters[c].name, osm_rd(osm_base[c], 0), osm_rd(osm_base[c], OSM_DESIRED), osm_rd(osm_base[c], 0x704),
++			    osm_rd(osm_base[c], 0x700), osm_rd(osm_base[c], 0x708));
++		}
++	}
++	for (int pass = 0; pass < 3; pass++) {
++		uint64_t x = 1, n = 50000000, t0 = mach_absolute_time(), ns;
++		for (uint64_t i = 0; i < n; i++) {
++			__asm__ volatile("add %0, %0, #1" : "+r"(x));
++		}
++		absolutetime_to_nanoseconds(mach_absolute_time() - t0, &ns);
++		printf("SWEET CPUFREQ: boot cpu %d: %llu adds in %llu us = ~%llu MHz (loop overhead included)\n",
++		    cpu_number(), n, ns / 1000, ns ? n * 1000 / ns : 0);
++		delay(100000);
++	}
++
+ 	if (want == 3 && mapped > 0) {
+ 		osm_gov_call = thread_call_allocate(osm_gov_tick, NULL);
+ 		if (osm_gov_call != NULL) {
+-- 
+2.53.0
+

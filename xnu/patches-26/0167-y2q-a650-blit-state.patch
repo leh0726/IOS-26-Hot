@@ -1,0 +1,45 @@
+From 0bf5116598699ad14ba663ea03fff0c743b29ba1 Mon Sep 17 00:00:00 2001
+From: y2q <y2q@local>
+Date: Sat, 14 Nov 2026 09:50:29 +0900
+Subject: [PATCH] y2q: A650 magic registers and RB_CCU_CNTL in the present blit
+ state
+
+---
+ bsd/dev/sweet_a6xx.c | 14 +++++++++-----
+ 1 file changed, 9 insertions(+), 5 deletions(-)
+
+diff --git a/bsd/dev/sweet_a6xx.c b/bsd/dev/sweet_a6xx.c
+index dbfa911..ea339f9 100644
+--- a/bsd/dev/sweet_a6xx.c
++++ b/bsd/dev/sweet_a6xx.c
+@@ -1114,18 +1114,22 @@ int a6_power_up(struct a6_gpu *g)
+ 
+ /* ---- 2D blit (turnip's r2d path for vkCmdBlitImage, captured on the A640) ---- */
+ 
+-/* The A640 state turnip writes before any work (tu6_init_hw + the device's magic registers). */
++/*
++ * The state turnip writes before any work (tu6_init_hw + the device's magic registers), captured on the A640;
++ * y2q (0167): the magic registers are Mesa's A650 ones (freedreno_devices.py) -- every present IB writes these,
++ * and with the A640 values Turnip's own work ran on wrong chicken bits and CCU layout between presents.
++ */
+ static const uint32_t blit_init[][2] = {
+-	{ 0x9804, 0x1f }, { 0x9805, 1 }, { 0xa0f8, 1 }, { 0xb600, 0x8000 }, { 0x8600, 0 },
+-	{ 0xae03, 0x420 }, { 0xae00, 0 }, { 0xbe04, 0 }, { 0x9600, 0x2000000 }, { 0x0e12, 1 },
+-	{ 0x8e01, 1 }, { 0x8e04, 0x4100000 }, { 0xae04, 0 }, { 0xae0f, 0x3f }, { 0xb605, 0x44 },
++	{ 0x9804, 0x1f }, { 0x9805, 2 }, { 0xa0f8, 1 }, { 0xb600, 0x01008000 }, { 0x8600, 0 },
++	{ 0xae03, 0x1400 }, { 0xae00, 0x1200000 }, { 0xbe04, 0 }, { 0x9600, 0x2000000 }, { 0x0e12, 1 },
++	{ 0x8e01, 0 }, { 0x8e04, 0x4100000 }, { 0xae04, 0 }, { 0xae0f, 0x3f }, { 0xb605, 0x44 },
+ 	{ 0xbe00, 0x80 }, { 0xbe01, 0 }, { 0xab20, 0 }, { 0xb182, 0 }, { 0xbb11, 0 }, { 0xa9a8, 0 },
+ 	{ 0xab00, 5 }, { 0xa009, 3 }, { 0x8811, 0x10 }, { 0x8110, 0 }, { 0x8818, 0 }, { 0x8819, 0 },
+ 	{ 0x881a, 0 }, { 0x881b, 0 }, { 0x881c, 0 }, { 0x881d, 0 }, { 0x881e, 0 }, { 0x88f0, 0 },
+ 	{ 0x9236, 0 }, { 0x9300, 0 }, { 0x9306, 1 }, { 0xb183, 0 }, { 0x80af, 0 }, { 0x8099, 0 },
+ 	{ 0x980a, 0 }, { 0x9210, 0 }, { 0x9211, 0 }, { 0x9602, 0 }, { 0x9e72, 0 }, { 0xb309, 0xa2 },
+ 	{ 0xb986, 0xfc }, { 0xa007, 0 }, { 0x8864, 0 }, { 0xb800, 0x102 },
+-	{ 0x8e07, 0x10000000 },		/* RB_CCU_CNTL: sysmem, full CCU */
++	{ 0x8e07, 0x18000004 },		/* RB_CCU_CNTL: sysmem; A650: colour offset 3 x 64 KB (3 CCUs; G986N-iOS ccu_cntl) */
+ };
+ 
+ #define EV_CACHE_FLUSH_TS	0x04
+-- 
+2.53.0
+

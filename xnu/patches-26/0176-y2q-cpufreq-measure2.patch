@@ -1,0 +1,31 @@
+From 72c0114181b3c8176eb6534b9d03d639e7daf735 Mon Sep 17 00:00:00 2001
+From: y2q <y2q@local>
+Date: Sat, 14 Nov 2026 19:33:12 +0900
+Subject: [PATCH] y2q: cpufreq measurement with dependent-add chain
+
+---
+ bsd/dev/sweet_cpufreq.c | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/bsd/dev/sweet_cpufreq.c b/bsd/dev/sweet_cpufreq.c
+index 323f517..d5028e8 100644
+--- a/bsd/dev/sweet_cpufreq.c
++++ b/bsd/dev/sweet_cpufreq.c
+@@ -256,9 +256,11 @@ sweet_cpufreq_init(void)
+ 		}
+ 	}
+ 	for (int pass = 0; pass < 3; pass++) {
+-		uint64_t x = 1, n = 50000000, t0 = mach_absolute_time(), ns;
+-		for (uint64_t i = 0; i < n; i++) {
+-			__asm__ volatile("add %0, %0, #1" : "+r"(x));
++		uint64_t x = 1, n = 100000000, t0 = mach_absolute_time(), ns;
++		for (uint64_t i = 0; i < n / 10; i++) {
++			/* ten dependent adds: one cycle each on A55/A77, the loop's own work hides beside them */
++			__asm__ volatile("add %0, %0, #1\n add %0, %0, #1\n add %0, %0, #1\n add %0, %0, #1\n add %0, %0, #1\n"
++			    "add %0, %0, #1\n add %0, %0, #1\n add %0, %0, #1\n add %0, %0, #1\n add %0, %0, #1" : "+r"(x));
+ 		}
+ 		absolutetime_to_nanoseconds(mach_absolute_time() - t0, &ns);
+ 		printf("SWEET CPUFREQ: boot cpu %d: %llu adds in %llu us = ~%llu MHz (loop overhead included)\n",
+-- 
+2.53.0
+

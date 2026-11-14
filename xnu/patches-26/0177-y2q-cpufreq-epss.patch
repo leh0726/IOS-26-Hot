@@ -1,0 +1,44 @@
+From c5b16e541bafa950812b0b81d336268cf6375171 Mon Sep 17 00:00:00 2001
+From: y2q <y2q@local>
+Date: Sat, 14 Nov 2026 19:42:11 +0900
+Subject: [PATCH] y2q: cpufreq on the SM8250 EPSS layout (LUT 0x100/4, perf
+ state 0x320)
+
+---
+ bsd/dev/sweet_cpufreq.c | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/bsd/dev/sweet_cpufreq.c b/bsd/dev/sweet_cpufreq.c
+index d5028e8..9e2708d 100644
+--- a/bsd/dev/sweet_cpufreq.c
++++ b/bsd/dev/sweet_cpufreq.c
+@@ -27,10 +27,10 @@ extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
+ extern bool sweet_fb_is_blanked(void);
+ void sweet_cpufreq_init(void);
+ 
+-#define OSM_FREQ_REG            0x110u          /* + 32 * index */
+-#define OSM_ROW                 32u
++#define OSM_FREQ_REG            0x100u          /* y2q (0177): SM8250 is EPSS: LUT at 0x100, 4 bytes a row */
++#define OSM_ROW                 4u
+ #define OSM_ROWS                40u
+-#define OSM_DESIRED             0x920u          /* + 4 * core in cluster; core 0 drives the policy */
++#define OSM_DESIRED             0x320u          /* y2q (0177): EPSS perf state (was OSM 0x920) */          /* + 4 * core in cluster; core 0 drives the policy */
+ #define OSM_XO_KHZ              19200u
+ #define OSM_CLUSTERS            3u
+ #define OSM_GOV_TICK_MS         250u
+@@ -250,9 +250,9 @@ sweet_cpufreq_init(void)
+ 	/* y2q (0174): what the hardware says, and the boot CPU's real speed (a chain of dependent adds, 1 per cycle) */
+ 	for (unsigned c = 0; c < OSM_CLUSTERS; ++c) {
+ 		if (osm_base[c]) {
+-			printf("SWEET CPUFREQ: %s regs: enable %#x perf_state %#x current_vote(0x704) %#x 0x700 %#x 0x708 %#x\n",
+-			    osm_clusters[c].name, osm_rd(osm_base[c], 0), osm_rd(osm_base[c], OSM_DESIRED), osm_rd(osm_base[c], 0x704),
+-			    osm_rd(osm_base[c], 0x700), osm_rd(osm_base[c], 0x708));
++			printf("SWEET CPUFREQ: %s regs: enable %#x perf_state %#x current_vote(0x340) %#x domain_state(0x20) %#x dcvs_ctrl(0xb0) %#x\n",
++			    osm_clusters[c].name, osm_rd(osm_base[c], 0), osm_rd(osm_base[c], OSM_DESIRED), osm_rd(osm_base[c], 0x340),
++			    osm_rd(osm_base[c], 0x20), osm_rd(osm_base[c], 0xb0));
+ 		}
+ 	}
+ 	for (int pass = 0; pass < 3; pass++) {
+-- 
+2.53.0
+

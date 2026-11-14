@@ -1,0 +1,25 @@
+From 5c1227cad7bbd07dd3a379dff3918a3be5a6a50f Mon Sep 17 00:00:00 2001
+From: y2q <y2q@local>
+Date: Sat, 14 Nov 2026 20:35:40 +0900
+Subject: [PATCH] y2q: y2qposterreset also moves the MobileGestalt cache aside
+
+---
+ bsd/vfs/vfs_syscalls.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/bsd/vfs/vfs_syscalls.c b/bsd/vfs/vfs_syscalls.c
+index 64d6a05..d727db1 100644
+--- a/bsd/vfs/vfs_syscalls.c
++++ b/bsd/vfs/vfs_syscalls.c
+@@ -15712,6 +15712,8 @@ sweet_poster_reset(void)
+ 		"/private/var/mobile/Library/Application Support/PosterBoardServices",
+ 		"/private/var/mobile/Library/Preferences/com.apple.PosterBoard.unprotectedUserDefaults.plist",
+ 		"/private/var/mobile/Library/Preferences/com.apple.PosterBoard.plist",
++		/* 0180: the MobileGestalt answers cached with arm64e = false */
++		"/private/var/containers/Shared/SystemGroup/systemgroup.com.apple.mobilegestaltcache/Library/Caches/com.apple.MobileGestalt.plist",
+ 	};
+ 	uint32_t on = 0;
+ 	if (PE_parse_boot_argn("y2qposterreset", &on, sizeof(on)) && on) {
+-- 
+2.53.0
+

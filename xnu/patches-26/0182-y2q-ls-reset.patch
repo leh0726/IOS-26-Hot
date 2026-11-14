@@ -1,0 +1,52 @@
+From 394e2f805e4f637d913b390d02257b3918e43d6d Mon Sep 17 00:00:00 2001
+From: y2q <y2q@local>
+Date: Sat, 14 Nov 2026 21:16:33 +0900
+Subject: [PATCH] y2q: y2qlsreset moves the LaunchServices database aside
+
+---
+ bsd/kern/bsd_init.c    |  2 ++
+ bsd/vfs/vfs_syscalls.c | 15 +++++++++++++++
+ 2 files changed, 17 insertions(+)
+
+diff --git a/bsd/kern/bsd_init.c b/bsd/kern/bsd_init.c
+index 00759c2..7990251 100644
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -1156,6 +1156,8 @@ bsdinit_task(void)
+ 			sweet_icon_cache_reset();        /* y2q 0169 */
+ 			extern void sweet_poster_reset(void);
+ 			sweet_poster_reset();            /* y2q 0178 */
++			extern void sweet_ls_reset(void);
++			sweet_ls_reset();                /* y2q 0182 */
+ 		}
+ 		sweet_files_start();
+ 		int e1 = sweet_ensure_dir_mode("/private/var/local", 0777);
+diff --git a/bsd/vfs/vfs_syscalls.c b/bsd/vfs/vfs_syscalls.c
+index d727db1..e3b6775 100644
+--- a/bsd/vfs/vfs_syscalls.c
++++ b/bsd/vfs/vfs_syscalls.c
+@@ -15721,6 +15721,21 @@ sweet_poster_reset(void)
+ 	}
+ }
+ 
++/* y2q (0182): boot-arg y2qlsreset=1 moves lsd's LaunchServices database aside: lsd seeds a new one and installd
++ * enumerates every system app and extension again (with the arm64e capability of 0180) */
++void sweet_ls_reset(void);
++void
++sweet_ls_reset(void)
++{
++	static const char *const dirs[] = {
++		"/private/var/mobile/Containers/Data/InternalDaemon/8C9A7AC9-C393-4AC6-86FE-FC7368D1FCE5/Library/Caches",
++	};
++	uint32_t on = 0;
++	if (PE_parse_boot_argn("y2qlsreset", &on, sizeof(on)) && on) {
++		sweet_move_aside(dirs, sizeof(dirs) / sizeof(dirs[0]), "launchservices db");
++	}
++}
++
+ void sweet_icon_cache_reset(void);
+ void
+ sweet_icon_cache_reset(void)
+-- 
+2.53.0
+

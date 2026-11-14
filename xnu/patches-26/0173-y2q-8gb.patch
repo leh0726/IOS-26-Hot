@@ -1,0 +1,44 @@
+From bee5fed1c3ebfbede9819b37992197e135f904a7 Mon Sep 17 00:00:00 2001
+From: y2q <y2q@local>
+Date: Sat, 14 Nov 2026 19:19:39 +0900
+Subject: [PATCH] y2q: 8 GB for XNU: mirror at 0x2_fe000000, GPU pool high
+ range at 0x3_00000000
+
+---
+ bsd/dev/sweet_gpu.c | 6 +++---
+ bsd/dev/sweet_ufs.c | 2 +-
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/bsd/dev/sweet_gpu.c b/bsd/dev/sweet_gpu.c
+index 8b38f1e..0cc15ca 100644
+--- a/bsd/dev/sweet_gpu.c
++++ b/bsd/dev/sweet_gpu.c
+@@ -1037,9 +1037,9 @@ sweet_gpu_submit_user(uint64_t ib_iova, uint32_t dwords, uint32_t timeout_ms, ui
+ static const struct { uint64_t pa, size; } gpool_ranges[] = {
+ 	{ 0xc4000000ULL, 0x1c000000ULL },       /* 448 MB (the first 64 MB left to ABL's ramdisk) */
+ 	{ 0xe1000000ULL, 0x1f000000ULL },       /* 496 MB */
+-	/* y2q (0172): 12 GB phone, XNU takes 0x1_00000000-0x1_fcc00000 only; 0x2_00000000 up is RAM nobody uses
+-	 * (dt memory <0x2_00000000 0x1_80000000>, no fixed carve-out there) and inside the ADT dram range (is_dram_addr) */
+-	{ 0x200000000ULL, 0x80000000ULL },     /* 2 GB */
++	/* y2q (0173): XNU takes 8 GB (0x1_00000000-0x2_fcc00000, mkadt); /pram, mirror and mailbox to 0x3_00000000;
++	 * the RAM above (dt memory ends 0x3_80000000, no fixed carve-out there) is the pool's, inside is_dram_addr */
++	{ 0x300000000ULL, 0x7c000000ULL },     /* 1984 MB (the top 64 MB left alone) */
+ };
+ static struct { uint64_t pa, size; } gpool_free[GPOOL_FREE_MAX];       /* sorted by address, merged */
+ static uint32_t gpool_nfree;
+diff --git a/bsd/dev/sweet_ufs.c b/bsd/dev/sweet_ufs.c
+index 602329f..af391aa 100644
+--- a/bsd/dev/sweet_ufs.c
++++ b/bsd/dev/sweet_ufs.c
+@@ -737,7 +737,7 @@ static uint32_t sweet_log_secs = SWEET_LOG_SECS;
+  *   +0x1000 ring bytes (offset of byte n = n % ring size)
+  * The next shim boot copies its tail to UFS (tools/flame-log-pull.sh rescue).
+  */
+-#define SWEET_MIRROR_PA         0x1fe000000ULL
++#define SWEET_MIRROR_PA         0x2fe000000ULL  /* y2q (0173): above the 8 GB XNU range (shim XNU_MIRROR_PA) */
+ struct sweet_mirror_header {
+ 	char magic[8];
+ 	uint64_t total;
+-- 
+2.53.0
+

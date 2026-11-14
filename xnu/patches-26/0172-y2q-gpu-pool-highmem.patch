@@ -1,0 +1,26 @@
+From e9df0cfe6d0308367682cbf806b2fa65194abedb Mon Sep 17 00:00:00 2001
+From: y2q <y2q@local>
+Date: Sat, 14 Nov 2026 19:14:47 +0900
+Subject: [PATCH] y2q: GPU pool +2 GB at 0x2_00000000
+
+---
+ bsd/dev/sweet_gpu.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/bsd/dev/sweet_gpu.c b/bsd/dev/sweet_gpu.c
+index 8a7e187..8b38f1e 100644
+--- a/bsd/dev/sweet_gpu.c
++++ b/bsd/dev/sweet_gpu.c
+@@ -1037,6 +1037,9 @@ sweet_gpu_submit_user(uint64_t ib_iova, uint32_t dwords, uint32_t timeout_ms, ui
+ static const struct { uint64_t pa, size; } gpool_ranges[] = {
+ 	{ 0xc4000000ULL, 0x1c000000ULL },       /* 448 MB (the first 64 MB left to ABL's ramdisk) */
+ 	{ 0xe1000000ULL, 0x1f000000ULL },       /* 496 MB */
++	/* y2q (0172): 12 GB phone, XNU takes 0x1_00000000-0x1_fcc00000 only; 0x2_00000000 up is RAM nobody uses
++	 * (dt memory <0x2_00000000 0x1_80000000>, no fixed carve-out there) and inside the ADT dram range (is_dram_addr) */
++	{ 0x200000000ULL, 0x80000000ULL },     /* 2 GB */
+ };
+ static struct { uint64_t pa, size; } gpool_free[GPOOL_FREE_MAX];       /* sorted by address, merged */
+ static uint32_t gpool_nfree;
+-- 
+2.53.0
+

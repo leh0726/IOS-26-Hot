@@ -138,6 +138,10 @@ def d421ap_product(ph, path=D421AP_ADT):
 
 PANIC_LOG_PA = 0x1fd000000
 PANIC_LOG_SIZE = 0x80000
+# y2q: 8 GB for XNU (0x1_00000000-0x2_fcc00000), dram range 0x80000000-0x3_80000000, /pram at 0x2_fd000000
+Y2Q_MEM_SIZE = 0x1fcc00000
+Y2Q_DRAM_SIZE = 0x300000000
+Y2Q_PANIC_LOG_PA = 0x2fd000000
 
 
 def node(name, props=(), children=()):
@@ -151,6 +155,13 @@ def build(seed=None, qemu=False, highmem=False, d22ap=False, canvas_height=2499,
     """qemu=True: same tree, but with QEMU virt's GIC addresses and CNTFRQ (tools/qemu-sweet.py)."""
     phys_base, mem_size = (HIGH_PHYS_BASE, HIGH_MEM_SIZE) if highmem else (PHYS_BASE, MEM_SIZE)
     dram_base, dram_size = (QEMU_DRAM_BASE, QEMU_DRAM_SIZE) if qemu else (DRAM_BASE, DRAM_SIZE)
+    if y2q and highmem:
+        # y2q (12 GB, dt memory <0x80000000 0x39900000> <0xc0000000 0x140000000> <0x2_00000000 0x1_80000000>):
+        # XNU takes 8 GB from 0x1_00000000 (to 0x2_fcc00000); /pram, the console mirror and the shim's mailbox
+        # sit just above it, the GPU pool takes 0x3_00000000 up (sweet_gpu.c, xnu 0173), and the dram range
+        # (is_dram_addr: WC mappings) covers all of it.
+        mem_size = Y2Q_MEM_SIZE
+        dram_size = Y2Q_DRAM_SIZE
     gicd, gicr, timebase = (QEMU_GICD, QEMU_GICR, QEMU_TIMEBASE) if qemu else (GICD, GICR, TIMEBASE)
     # XNU 12377 requires four SHA-512 blocks from PE_get_random_seed;
     # the legacy iOS 16 target requests one block.
@@ -326,7 +337,7 @@ def build(seed=None, qemu=False, highmem=False, d22ap=False, canvas_height=2499,
 
     # iBoot's panic region (pe_init.c check_for_panic_log): RAM above XNU's range
     # (which ends at 0x1fcc00000) and below the console mirror at 0x1fe000000.
-    pram = node('pram', [ph(), ('reg', struct.pack('<2Q', PANIC_LOG_PA, PANIC_LOG_SIZE))])
+    pram = node('pram', [ph(), ('reg', struct.pack('<2Q', Y2Q_PANIC_LOG_PA if (y2q and highmem) else PANIC_LOG_PA, PANIC_LOG_SIZE))])
 
     # bsd/dev/sweet_ufs.c: the UFS host ABL leaves running (absolute physical reg).
     ufs = node('sweet-ufs', [

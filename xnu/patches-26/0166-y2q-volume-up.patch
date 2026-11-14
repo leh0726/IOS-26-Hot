@@ -1,0 +1,38 @@
+From de9bb91380cf6a636cc359cb184ab1337a30d2d4 Mon Sep 17 00:00:00 2001
+From: y2q <y2q@local>
+Date: Sat, 14 Nov 2026 09:40:42 +0900
+Subject: [PATCH] y2q: volume up on PM8150L GPIO3 (SID 4)
+
+---
+ bsd/dev/sweet_keys.c | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/bsd/dev/sweet_keys.c b/bsd/dev/sweet_keys.c
+index c9a037b..e71daf9 100644
+--- a/bsd/dev/sweet_keys.c
++++ b/bsd/dev/sweet_keys.c
+@@ -24,8 +24,10 @@ void sweet_keys_init(void);
+ #define KEYS_OBS_PA      0x0e600000u
+ #define KEYS_CNFG_PA     0x0c40a000u
+ #define KEYS_PON_RT      0x0810u
+-#define KEYS_GPIO_BASE   0xc500u
+-#define KEYS_GPIO_RT     (KEYS_GPIO_BASE + 0x10u)
++/* y2q (0166): volume up is PM8150L (SID 4) GPIO3 at 0xc200, its level in STATUS1 (0x08) bit 0 (as the shim reads it) */
++#define KEYS_GPIO_SID    4u
++#define KEYS_GPIO_BASE   0xc200u
++#define KEYS_GPIO_RT     (KEYS_GPIO_BASE + 0x08u)
+ #define KEYS_NO_APID     0xffffu
+ 
+ static vm_offset_t keys_core, keys_obs, keys_cnfg;
+@@ -164,7 +166,7 @@ sweet_keys_init(void)
+ 		return;
+ 	}
+ 	keys_pon_apid = keys_find_apid(0x008, count);
+-	keys_gpio_apid = keys_find_apid(KEYS_GPIO_BASE >> 8, count);
++	keys_gpio_apid = keys_find_apid((uint16_t)(KEYS_GPIO_SID << 8 | KEYS_GPIO_BASE >> 8), count);
+ 	uint8_t pon = 0, gpio = 0, mode = 0, en = 0, subtype = 0;
+ 	bool pok = keys_read(keys_pon_apid, KEYS_PON_RT, &pon);
+ 	bool gok = keys_read(keys_gpio_apid, KEYS_GPIO_RT, &gpio);
+-- 
+2.53.0
+

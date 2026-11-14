@@ -1,0 +1,61 @@
+From 25d4612df300cd84ee78b8a97b30d5ec17ea3373 Mon Sep 17 00:00:00 2001
+From: y2q <y2q@local>
+Date: Sat, 14 Nov 2026 09:33:02 +0900
+Subject: [PATCH] y2q: cpufreq on SM8250 cpufreq-hw domains; A650 525/587 MHz
+ levels
+
+---
+ bsd/dev/sweet_a6xx.c    |  6 +++---
+ bsd/dev/sweet_cpufreq.c | 12 ++++++------
+ 2 files changed, 9 insertions(+), 9 deletions(-)
+
+diff --git a/bsd/dev/sweet_a6xx.c b/bsd/dev/sweet_a6xx.c
+index f518e3b..dbfa911 100644
+--- a/bsd/dev/sweet_a6xx.c
++++ b/bsd/dev/sweet_a6xx.c
+@@ -491,9 +491,9 @@ static int gmu_boot(struct a6_gpu *g)
+ #define LVL_NOM		256
+ #define LVL_NOM_L1	320
+ 
+-/* y2q A650: 305/400/490 MHz (the three lowest dt qcom,gpu-pwrlevels, as G986N-iOS uses) */
+-static const uint32_t gpu_khz[] = { 0, 305000, 400000, 490000 };
+-static const uint32_t gpu_lvl[] = { 0, LVL_LOW_SVS, LVL_SVS, LVL_SVS_L1 };
++/* y2q A650 (kona qcom,gpu-pwrlevels): 305 LOW_SVS, 400 SVS, 490 SVS_L1, 525 SVS_L2, 587 NOM (0165) */
++static const uint32_t gpu_khz[] = { 0, 305000, 400000, 490000, 525000, 587000 };
++static const uint32_t gpu_lvl[] = { 0, LVL_LOW_SVS, LVL_SVS, LVL_SVS_L1, LVL_SVS_L2, LVL_NOM };
+ static const uint32_t gmu_khz[] = { 0, 200000 };
+ static const uint32_t gmu_lvl[] = { 0, LVL_MIN_SVS };
+ 
+diff --git a/bsd/dev/sweet_cpufreq.c b/bsd/dev/sweet_cpufreq.c
+index 2033137..c58cfc5 100644
+--- a/bsd/dev/sweet_cpufreq.c
++++ b/bsd/dev/sweet_cpufreq.c
+@@ -50,9 +50,10 @@ static const struct {
+ 	unsigned sweet_mhz;
+ 	unsigned tier_cap_mhz[OSM_TIERS];       /* SLEEP, IDLE, ACTIVE */
+ } osm_clusters[OSM_CLUSTERS] = {
+-	{"pwrcl (A55 x4)",     0x18323000u, 1632u, { 576u, 1383u, 1786u}},
+-	{"perfcl (A76 x3)",    0x18325800u, 1805u, { 711u, 1709u, 2420u}},
+-	{"perfpcl (A76 prime)",0x18327800u, 2016u, { 826u, 1901u, 2842u}},
++	/* y2q (SM8250, 0165): cpufreq-hw domains 0x18591000/0x18592000/0x18593000, same register layout */
++	{"silver (A55 x4)",    0x18591000u, 1612u, { 576u, 1382u, 1804u}},
++	{"gold (A77 x3)",      0x18592000u, 1862u, { 710u, 1708u, 2419u}},
++	{"prime (A77)",        0x18593000u, 2073u, { 844u, 1900u, 2841u}},
+ };
+ 
+ static vm_offset_t osm_base[OSM_CLUSTERS];
+@@ -174,9 +175,8 @@ sweet_cpufreq_init(void)
+ 	(void)PE_parse_boot_argn("flamecpufreq", &want, sizeof(want));
+ 	if (want == 0) {
+ 		/*
+-		 * y2q (0155): off means untouched. The OSM blocks at 0x18323000.. are SM8150's; SM8250 has
+-		 * cpufreq-hw (EPSS) elsewhere, and reading the SM8150 addresses never completes, which kept
+-		 * the boot thread from mounting root.
++		 * y2q (0155): off means untouched (the SM8150 OSM addresses never completed a read on the
++		 * y2q; 0165 moved the table to SM8250's cpufreq-hw domains).
+ 		 */
+ 		printf("SWEET CPUFREQ: off (flamecpufreq=0), OSM not touched\n");
+ 		return;
+-- 
+2.53.0
+

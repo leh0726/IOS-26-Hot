@@ -15,7 +15,11 @@ KERNEL=$1 OUT=$2; shift 2
 mkdir -p work/boot
 
 NCPUS=${NCPUS:-8}
-python3 tools/mkadt.py work/boot/y2q-d421ap.adt --highmem --y2q --ncpus=$NCPUS
+# CANVAS_H: iOS's screen height in pixels at 1125 wide. 2436 = the iPhone 11 Pro's real 375x812 pt (apps and the
+# boot logo lay out for known sizes; 2499 = 375x833 pt fills the 20:9 panel but no iPhone has it: the Phone keypad
+# sat high and the logo came out small). 2436 leaves ~41 px bars above and below on the 1440x3200 panel.
+CANVAS_H=${CANVAS_H:-2436}
+python3 tools/mkadt.py work/boot/y2q-d421ap.adt --highmem --y2q --ncpus=$NCPUS --canvas-height=$CANVAS_H
 
 ARGS="debug=0xc serial=3 cpus=$NCPUS keepsyms=1 -v -enable_kprintf_spam -noprogress wdt=-1"
 ARGS="$ARGS cs_integrity_skip=1 fips_mode=0x44"
@@ -28,20 +32,22 @@ if [ -n "${GPU:-}" ]; then
 	if [ -n "${METAL:-}" ]; then
 		# METAL=1: publish SweetAccelerator (IOAcceleratorES) for HotMetal2 (metal2vulkan + Turnip): needs the
 		# userland overlay (OVERLAY=work/boot/ios26-overlay.tar, tools/make-ios26-overlay.py --hotmetal2 ...)
-		ARGS="$ARGS sweetgpu=1 sweetgpufreq=${GPUFREQ:-1} hotmtl=2"
+		# sweetfb_noconsole=1: once the GUI presents, the console text is no longer drawn over it (still logged)
+		ARGS="$ARGS sweetgpu=1 sweetgpufreq=${GPUFREQ:-5} hotmtl=2 sweetfb_noconsole=${NOCONSOLE:-1}"
 	else
 		ARGS="$ARGS sweetgpu=1 sweetgpufreq=${GPUFREQ:-1} hotmtl=0 sweetmtl=0"
 	fi
 else
 	ARGS="$ARGS sweetgpu=0 hotmtl=0 sweetmtl=0"
 fi
-ARGS="$ARGS sweetusb=0 flamecpufreq=0"
+# flamecpufreq: 3 = dynamic governor on the SM8250 cpufreq-hw domains (xnu 0165); 0 = untouched
+ARGS="$ARGS sweetusb=0 flamecpufreq=${CPUFREQ:-3}"
 ARGS="$ARGS rmxtouch=0 flametouch=0 sweettouch=0 rmxaudio=0 rmxbattery=0 sweetbattery=0 rmxhaptic=0 rmxtorch=0"
 if [ -n "${ROOT:-}" ]; then
 	# ROOT=1: the iOS root image is on userdata (tools/y2q-build-rootfs.sh, written from TWRP). The root is
 	# mounted read-write, and the console log goes to the last 4 MiB + 4 KiB of userdata every
 	# ufslogsecs seconds (bsd/dev/sweet_ufs.c "sweetlog"), past the 28 GiB image: tools/y2q-log-pull.sh reads it.
-	ARGS="$ARGS rd=ufsroot0 ufsrw=1 rootrw=1 ufslogsecs=5"
+	ARGS="$ARGS rd=ufsroot0 ufsrw=1 rootrw=1 ufslogsecs=${UFSLOGSECS:-5}"
 	ARGS="$ARGS ignition_level=1 launchd_unsecure_cache=1 unentitled_ios_sim_launch=1 wdt_test=no_user_checkin"
 else
 	# never write the phone's storage

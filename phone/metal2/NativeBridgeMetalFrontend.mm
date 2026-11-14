@@ -2097,6 +2097,7 @@ static uint64_t askAnswer(SEL cmd,NSUInteger arg);
 // gets the pitch its length implies where the required one does not fit.
 - (id<MTLTexture>)newTextureWithBytesNoCopy:(void *)bytes length:(NSUInteger)length descriptor:(MTLTextureDescriptor *)d deallocator:(void (^)(void *,NSUInteger))deallocator {
  const size_t page=(size_t)getpagesize();
+ uint64_t fitRow=0;	/* y2q: the caller's pitch, when it is not Turnip's (see below) */
  if(!d || !d.width || !d.height)return nil;
  if(bytes && !length && !((uintptr_t)bytes&(page-1)) && !deallocator && d.textureType==MTLTextureType2D && d.mipmapLevelCount<=1 && d.arrayLength<=1 && d.sampleCount<=1) {
   uint32_t bw=0,bh=0,bb=0;
@@ -2109,6 +2110,15 @@ static uint64_t askAnswer(SEL cmd,NSUInteger arg);
    if(robj!=MACH_PORT_NULL)mach_port_deallocate(mach_task_self(),robj);
    if(raddr<=(uintptr_t)bytes && (rinfo.protection&VM_PROT_READ) && ((uintptr_t)raddr+rsize)>=(uintptr_t)bytes+want)
     length=(NSUInteger)want;
+   else if(!bw && raddr<=(uintptr_t)bytes && (rinfo.protection&VM_PROT_READ)) {
+    /* y2q: the caller laid its rows out at minimumLinearTextureAlignmentForPixelFormat (64 bytes), not at Turnip's
+     * preferred 256: small SpringBoard icon textures (102x102, 154x154, ...) did not fit the 256-byte pitch and were
+     * refused (blank or garbage icons). Take the pitch the caller used when that one fits the memory. */
+    const uint64_t align=MAX((uint64_t)64,(uint64_t)[(id<MTLDevice>)self minimumLinearTextureAlignmentForPixelFormat:d.pixelFormat]);
+    const uint64_t row2=(d.width*sweetTexelBytes(d.pixelFormat)+align-1)/align*align;
+    const uint64_t want2=row2?((row2*rowsNeed+page-1)&~(page-1)):0;
+    if(want2 && ((uintptr_t)raddr+rsize)>=(uintptr_t)bytes+want2){length=(NSUInteger)want2;fitRow=row2;}
+   }
   }
  }
  if(!bytes || !length || ((uintptr_t)bytes&(page-1)) || d.textureType!=MTLTextureType2D || d.mipmapLevelCount>1 || d.arrayLength>1 || d.sampleCount>1){
@@ -2129,7 +2139,7 @@ static uint64_t askAnswer(SEL cmd,NSUInteger arg);
   objc_setAssociatedObject(texture,&sweetMemoryOwnerKey,owner,OBJC_ASSOCIATION_RETAIN);
   return texture;
  }
- uint64_t row=nmb_device_linear_bytes_per_row(gDevice,d.pixelFormat,d.width);
+ uint64_t row=fitRow?fitRow:nmb_device_linear_bytes_per_row(gDevice,d.pixelFormat,d.width);
  if(row && row*d.height>length && length%d.height==0)row=length/d.height;
  if(!row || row*d.height>length){NBLOG(@"native-metal: newTextureWithBytesNoCopy: %lux%lu fmt %lu does not fit %lu bytes",(unsigned long)d.width,(unsigned long)d.height,(unsigned long)d.pixelFormat,(unsigned long)length);return nil;}
  id<MTLBuffer> buffer=[(id<MTLDevice>)self newBufferWithBytesNoCopy:bytes length:(length+page-1)&~(page-1) options:MTLResourceStorageModeShared deallocator:deallocator];

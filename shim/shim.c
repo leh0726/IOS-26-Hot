@@ -238,7 +238,7 @@ static void log_ram(void)
 }
 
 #ifdef SHIM_READONLY
-#define XNU_MIRROR_PA	0x1fe000000UL
+#define XNU_MIRROR_PA	0x2fe000000UL	/* y2q 8 GB XNU (mkadt): above 0x2_fcc00000 */
 #define XNU_RING_SIZE	(4u << 20)
 
 static void ramlog_rescue_readonly(void)

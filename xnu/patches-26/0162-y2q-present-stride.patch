@@ -1,0 +1,60 @@
+From 6f5ca172605f6ea6306de4713ebac9d665ad12ef Mon Sep 17 00:00:00 2001
+From: y2q <y2q@local>
+Date: Sat, 14 Nov 2026 09:07:32 +0900
+Subject: [PATCH] y2q: present with 5760-byte rows, 32 MB GPU pool, 20 MB GPU
+ FB map
+
+---
+ bsd/dev/sweet_a6xx.h                  | 4 ++--
+ iokit/Kernel/arm/SweetFramebuffer.cpp | 6 ++++--
+ 2 files changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/bsd/dev/sweet_a6xx.h b/bsd/dev/sweet_a6xx.h
+index 9caa421..07cdb1a 100644
+--- a/bsd/dev/sweet_a6xx.h
++++ b/bsd/dev/sweet_a6xx.h
+@@ -32,7 +32,7 @@
+ #include <stdbool.h>
+ #endif
+ 
+-#define A6_POOL_SIZE		0x1000000ull
++#define A6_POOL_SIZE		0x2000000ull	/* y2q: 32 MB, the 1440x3200 stage (18 MB at 0x600000) must fit */
+ #define A6_POOL_ALIGN		0x200000ull
+ #define A6_OFF_ZAP_META		0x0a0000ull
+ #define A6_OFF_GT_L1		0x100000ull
+@@ -49,7 +49,7 @@
+ #define A6_RING_DW		(A6_RING_SIZE / 4)
+ 
+ #define A6_FB_PA		0x9c000000ull	/* y2q cont_splash_region */
+-#define A6_FB_SIZE		0xa00000ull	/* mapped for the GPU: 5 x 2 MB */
++#define A6_FB_SIZE		0x1400000ull	/* mapped for the GPU: 10 x 2 MB (5760 x 3200 = 17.6 MB) */
+ 
+ /* y2q (SM-G986N, SM8250): Adreno 650, dt qcom,chipid 0x06050002 (G986N-iOS redwood_adreno.c) */
+ #define A6_GPU_ID		650
+diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
+index 615e43d..b227747 100644
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -52,7 +52,7 @@ void sweet_gpu_panel_stride(uint32_t stride);
+ extern int sweet_display_fit_x, sweet_display_fit_y, sweet_display_fit_w, sweet_display_fit_h;
+ extern volatile uint32_t sweet_backlight_alpha;
+ }
+-#define SWEET_FB_GPU_ROWBYTES           4352    /* the 2D engine writes 64-byte multiples */
++#define SWEET_FB_GPU_ROWBYTES           5760    /* y2q: 1440 x 4, already a 64-byte multiple (the 2D engine needs that) */
+ 
+ #if defined(SWEET)
+ #include <IOKit/IOService.h>
+@@ -625,7 +625,9 @@ AppleCLCD::presentGPU(const uint8_t *rec)
+ 	}
+ 	if (!fGPU) {
+ 		IOLockLock(fLock);
+-		sweet_gpu_panel_stride(SWEET_FB_GPU_ROWBYTES);
++		if (fRowBytes != SWEET_FB_GPU_ROWBYTES) {	/* y2q: ABL already scans out 5760-byte rows */
++			sweet_gpu_panel_stride(SWEET_FB_GPU_ROWBYTES);
++		}
+ 		fRowBytes = SWEET_FB_GPU_ROWBYTES;
+ 		bzero((void *)fPixels, (size_t)fRowBytes * fHeight);
+ 		fGPU = true;
+-- 
+2.53.0
+

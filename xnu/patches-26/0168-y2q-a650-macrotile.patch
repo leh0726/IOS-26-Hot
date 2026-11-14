@@ -1,0 +1,25 @@
+From d8acc32b5de5a6c3698a0806a78550564afd6b64 Mon Sep 17 00:00:00 2001
+From: y2q <y2q@local>
+Date: Sat, 14 Nov 2026 09:54:33 +0900
+Subject: [PATCH] y2q: A650 macrotile mode 1 for Turnip
+
+---
+ iokit/Kernel/arm/SweetAccelerator.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/iokit/Kernel/arm/SweetAccelerator.cpp b/iokit/Kernel/arm/SweetAccelerator.cpp
+index d59b9b0..00e495b 100644
+--- a/iokit/Kernel/arm/SweetAccelerator.cpp
++++ b/iokit/Kernel/arm/SweetAccelerator.cpp
+@@ -954,7 +954,7 @@ SweetAcceleratorUserClient::v2Method(uint32_t method, const void *in, uint32_t i
+ 		rp->va_size = fWinSize;
+ 		rp->highest_bank_bit = 16;
+ 		rp->ubwc_swizzle = 0x6;
+-		rp->macrotile_mode = 0;
++		rp->macrotile_mode = 1;	/* y2q (0168): A650 = eight channel (Linux a6xx_calc_ubwc_config, G986N-iOS); 0 was the A640's */
+ 		rp->ubwc_version = 3;
+ 		rp->flags = NativeAdrenoDeviceClientIova;
+ 		return kIOReturnSuccess;
+-- 
+2.53.0
+

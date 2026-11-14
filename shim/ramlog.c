@@ -13,7 +13,7 @@
 #include "ufs.h"
 #include "util.h"
 
-#define MAILBOX_PA	0x1ffe00000UL	/* top of RAM, above XNU's range; kept across ABL (probe: 0x1fff00000 held TWRP data) */
+#define MAILBOX_PA	0x2ffe00000UL	/* y2q: above the 8 GB XNU range (was 0x1ffe00000 at 4 GB); top of RAM, above XNU's range; kept across ABL (probe: 0x1fff00000 held TWRP data) */
 #define RING_SIZE	(4u << 20)
 #define RESCUE_DATA	((UFS_RESCUE_BLOCKS - 1) * 4096u)
 
@@ -45,7 +45,7 @@ void ramlog_arm(uint64_t ring_pa, uint64_t total_pa)
 	log_printf("ramlog: armed, ring %lx total %lx\n", ring_pa, total_pa);
 }
 
-#define MIRROR_PA	0x1fe000000UL	/* XNU's uncached ring mirror (sweet_ufs.c) */
+#define MIRROR_PA	0x2fe000000UL	/* XNU's uncached ring mirror (sweet_ufs.c) */
 
 static int rescue_from(uint64_t ring, uint64_t total, const char *what);
 
@@ -65,8 +65,8 @@ void ramlog_rescue(void)
 	}
 	uint64_t ring = mb->ring_pa, totp = mb->total_pa;
 	mb->magic[0] = 0;	/* one rescue per kernel run */
-	if (mb->ring_size != RING_SIZE || ring < 0x100000000UL || ring >= 0x200000000UL ||
-	    totp < 0x100000000UL || totp >= 0x200000000UL || (ring & 7) || (totp & 7)) {
+	if (mb->ring_size != RING_SIZE || ring < 0x100000000UL || ring >= 0x300000000UL ||
+	    totp < 0x100000000UL || totp >= 0x300000000UL || (ring & 7) || (totp & 7)) {
 		log_printf("ramlog: bad mailbox ring %lx total %lx\n", ring, totp);
 		return;
 	}

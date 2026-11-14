@@ -1,0 +1,39 @@
+From 64d88020152c644b2e928ef2a169367dc64e3258 Mon Sep 17 00:00:00 2001
+From: y2q <y2q@local>
+Date: Sat, 14 Nov 2026 19:04:24 +0900
+Subject: [PATCH] y2q: A650 GMEM base 0, no UCHE GMEM range
+
+---
+ bsd/dev/sweet_a6xx.c                  | 2 +-
+ iokit/Kernel/arm/SweetAccelerator.cpp | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/bsd/dev/sweet_a6xx.c b/bsd/dev/sweet_a6xx.c
+index 3937664..54d01c1 100644
+--- a/bsd/dev/sweet_a6xx.c
++++ b/bsd/dev/sweet_a6xx.c
+@@ -1066,7 +1066,7 @@ static int gpu_cp_init(struct a6_gpu *g, bool resume)
+ 		/* UCHE: write range max, trap base, write-through base (trap 0x1fffffffff000) */
+ 		{ 0x0e05, 0xffffffc0 }, { 0x0e06, 0x1ffff }, { 0x0e09, 0xfffff000 }, { 0x0e0a, 0x1ffff },
+ 		{ 0x0e07, 0xfffff000 }, { 0x0e08, 0x1ffff },
+-		{ 0x0e0b, 0x100000 }, { 0x0e0c, 0 }, { 0x0e0d, 0x21ffff }, { 0x0e0e, 0 },	/* GMEM range: A650 1 MB + 128 KB */
++		/* y2q (0171): no UCHE GMEM range on the A650 family (Linux a6xx_hw_init skips it; GMEM base 0) */
+ 		{ 0x0e18, 0x804 }, { 0x0e17, 0x4 },	/* UCHE_FILTER_CNTL, CACHE_WAYS */
+ 		{ 0x08c2, 0x02000140 }, { 0x08c1, 0x8040362c }, { 0x08c3, 128 },	/* ROQ, mem pool */
+ 		{ 0x098d, 1 }, { 0x0500, 1 },		/* CP_AHB_CNTL, RBBM_PERFCTR_CNTL */
+diff --git a/iokit/Kernel/arm/SweetAccelerator.cpp b/iokit/Kernel/arm/SweetAccelerator.cpp
+index 2b49af4..364b39c 100644
+--- a/iokit/Kernel/arm/SweetAccelerator.cpp
++++ b/iokit/Kernel/arm/SweetAccelerator.cpp
+@@ -954,7 +954,7 @@ SweetAcceleratorUserClient::v2Method(uint32_t method, const void *in, uint32_t i
+ 				rp->gmem_bytes = g;
+ 			}
+ 		}
+-		rp->gmem_base = 0x100000;
++		rp->gmem_base = 0;	/* y2q (0171): A650 family GMEM base 0 (Linux MSM_PARAM_GMEM_BASE, G986N-iOS) */
+ 		rp->uche_trap_base = 0x1fffffffff000ULL;
+ 		rp->va_start = fWinBase;
+ 		rp->va_size = fWinSize;
+-- 
+2.53.0
+

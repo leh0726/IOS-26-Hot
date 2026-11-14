@@ -1,0 +1,46 @@
+From ac43a0abd82b9cd022aecda064af91409c16aae7 Mon Sep 17 00:00:00 2001
+From: y2q <y2q@local>
+Date: Sat, 14 Nov 2026 19:32:26 +0900
+Subject: [PATCH] y2q: AppleCLCD reports the ADT canvas (1125x2436), not the
+ bigger panel
+
+---
+ iokit/Kernel/arm/SweetFramebuffer.cpp | 22 +++++++++++++++++++---
+ 1 file changed, 19 insertions(+), 3 deletions(-)
+
+diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
+index b227747..cd28726 100644
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -217,9 +217,25 @@ AppleCLCD::start(IOService *provider)
+ 	PE_parse_boot_argn("sweetfb_native", &native, sizeof(native));
+ 	fLogicalW = fWidth;
+ 	fLogicalH = fHeight;
+-	if (!native && fWidth <= SWEET_FB_LOGICAL_W && fHeight <= SWEET_FB_LOGICAL_H) {
+-		fLogicalW = SWEET_FB_LOGICAL_W;
+-		fLogicalH = SWEET_FB_LOGICAL_H;
++	if (!native) {
++		/*
++		 * y2q (0175): the canvas also when the panel is bigger than it (1440x3200): userland lays out for
++		 * disp0's canvas-width/height, and GetDisplaySize must say the same, else MobileGestalt sees a
++		 * 480x1066 pt screen no iPhone has (UIKit's red "rdar:45025538" status bar). The GPU scales to the panel.
++		 */
++		uint32_t cw = SWEET_FB_LOGICAL_W, ch = SWEET_FB_LOGICAL_H;
++		OSData *dw = OSDynamicCast(OSData, provider->getProperty("canvas-width"));
++		OSData *dh = OSDynamicCast(OSData, provider->getProperty("canvas-height"));
++		if (dw != NULL && dw->getLength() >= 4) {
++			cw = *(const uint32_t *)dw->getBytesNoCopy();
++		}
++		if (dh != NULL && dh->getLength() >= 4) {
++			ch = *(const uint32_t *)dh->getBytesNoCopy();
++		}
++		if (cw >= 320 && ch >= 480) {
++			fLogicalW = cw;
++			fLogicalH = ch;
++		}
+ 	}
+ 	fOffX = (int32_t)(fLogicalW - fWidth) / 2;
+ 	fOffY = (int32_t)(fLogicalH - fHeight) / 2;
+-- 
+2.53.0
+

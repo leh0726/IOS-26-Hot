@@ -1,0 +1,25 @@
+From 4289e8f5c2906a30c91cc2ba45aa4959bd196372 Mon Sep 17 00:00:00 2001
+From: y2q <y2q@local>
+Date: Sat, 14 Nov 2026 10:21:23 +0900
+Subject: [PATCH] y2q: SP_DBG_ECO_CNTL = Mesa A650 0x01000000
+
+---
+ bsd/dev/sweet_a6xx.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/bsd/dev/sweet_a6xx.c b/bsd/dev/sweet_a6xx.c
+index ea339f9..3937664 100644
+--- a/bsd/dev/sweet_a6xx.c
++++ b/bsd/dev/sweet_a6xx.c
+@@ -1121,7 +1121,7 @@ int a6_power_up(struct a6_gpu *g)
+  */
+ static const uint32_t blit_init[][2] = {
+ 	{ 0x9804, 0x1f }, { 0x9805, 2 }, { 0xa0f8, 1 }, { 0xb600, 0x01008000 }, { 0x8600, 0 },
+-	{ 0xae03, 0x1400 }, { 0xae00, 0x1200000 }, { 0xbe04, 0 }, { 0x9600, 0x2000000 }, { 0x0e12, 1 },
++	{ 0xae03, 0x1400 }, { 0xae00, 0x01000000 }, { 0xbe04, 0 }, { 0x9600, 0x2000000 }, { 0x0e12, 1 },
+ 	{ 0x8e01, 0 }, { 0x8e04, 0x4100000 }, { 0xae04, 0 }, { 0xae0f, 0x3f }, { 0xb605, 0x44 },
+ 	{ 0xbe00, 0x80 }, { 0xbe01, 0 }, { 0xab20, 0 }, { 0xb182, 0 }, { 0xbb11, 0 }, { 0xa9a8, 0 },
+ 	{ 0xab00, 5 }, { 0xa009, 3 }, { 0x8811, 0x10 }, { 0x8110, 0 }, { 0x8818, 0 }, { 0x8819, 0 },
+-- 
+2.53.0
+

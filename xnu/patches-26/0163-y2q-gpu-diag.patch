@@ -1,0 +1,30 @@
+From 856517e52bdd2613d1f10a3d0406431d98ee4ab5 Mon Sep 17 00:00:00 2001
+From: y2q <y2q@local>
+Date: Sat, 14 Nov 2026 09:20:12 +0900
+Subject: [PATCH] y2q: log GPU SMMU fault and status every 5 s (NoC error hunt)
+
+---
+ bsd/dev/sweet_gpu.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/bsd/dev/sweet_gpu.c b/bsd/dev/sweet_gpu.c
+index c6d130f..8a7e187 100644
+--- a/bsd/dev/sweet_gpu.c
++++ b/bsd/dev/sweet_gpu.c
+@@ -387,6 +387,13 @@ gpu_stats_locked(void)
+ 	if (ns < 5000000000ULL) {
+ 		return;
+ 	}
++	{	/* y2q 0163: NoC-error hunt, the GPU's fault/state every 5 s */
++		uint64_t far = 0;
++		uint32_t syn = 0, fsr = a6_fault_status(&gpu, &far, &syn);
++		a6_log("diag: smmu fsr %x far %llx fsynr0 %x, rbbm status %x int0 %x, cp hwfault %x status1 %x, rptr %x wptr %x\n",
++		    fsr, (unsigned long long)far, syn, a6_rd(A6_GREG(0x210)), a6_rd(A6_GREG(0x201)), a6_rd(A6_GREG(0x821)),
++		    a6_rd(A6_GREG(0x823)), a6_rd(A6_GREG(0x806)), gpu.wptr);
++	}
+ 	gstat_last_abs = now;
+ 	gstat_last_n = gstat_n;
+ 	gstat_last_missed = gstat_missed;
+-- 
+2.53.0
+
