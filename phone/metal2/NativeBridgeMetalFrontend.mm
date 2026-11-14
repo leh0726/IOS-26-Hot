@@ -245,8 +245,10 @@ static uint64_t gTexturePoolBytes;
 static std::atomic<uint64_t> gTexturePoolHits,gTexturePoolMisses;
 static void texturePoolLimits(uint64_t *capBytes,size_t *capCount) {
  const char *prog=getprogname();
- if(prog && !strcmp(prog,"backboardd")){*capBytes=192ull<<20;*capCount=32;}
- else if(prog && !strcmp(prog,"SpringBoard")){*capBytes=64ull<<20;*capCount=24;}
+ /* y2q: live blur makes many more render targets (telemetry: 88k pool misses in 129 s, ~680 allocations a second);
+  * the y2q's GPU pool is 1.9 GB */
+ if(prog && !strcmp(prog,"backboardd")){*capBytes=512ull<<20;*capCount=96;}
+ else if(prog && !strcmp(prog,"SpringBoard")){*capBytes=192ull<<20;*capCount=48;}
  else{*capBytes=0;*capCount=0;}
 }
 static bool canPoolTextureDesc(const NmbTextureDescriptor &req) {
@@ -439,16 +441,18 @@ static void flushSurfaces(NSMutableSet *surfaces,bool afterGpuWrite=false) {
   IOSurfaceRef surface=[item isKindOfClass:[NBTexture class]]?[(NBTexture *)item surface]:
                        ([item isKindOfClass:[NBBuffer class]]?[(NBBuffer *)item surfaceOwner]:nullptr);
   if(!surface)continue;
-  {
+  /* Only textures the GPU wrote (render targets) are remembered: buffers over IOSurfaces carry vertex and uniform data the
+   * CPU writes without locking the surface (no seed change), and skipping their clean fed the GPU stale pointers (SMMU
+   * faults, black screen). A surface the CPU writes without a lock after the GPU wrote it would be missed: none seen. */
+  if([item isKindOfClass:[NBTexture class]]) {
    const uint32_t sid=IOSurfaceGetID(surface),seed=IOSurfaceGetSeed(surface);
    std::lock_guard<std::mutex> hold(gSeedLock);
    if(afterGpuWrite) {
+    if(gCleanSeed.size()>4096)gCleanSeed.clear();
     gCleanSeed[sid]=seed;
    } else {
     auto known=gCleanSeed.find(sid);
     if(known!=gCleanSeed.end() && known->second==seed){gSurfaceFlushDuplicates++;continue;}
-    gCleanSeed[sid]=seed;
-    if(gCleanSeed.size()>4096)gCleanSeed.clear();
    }
   }
   void *rawBase=IOSurfaceGetBaseAddress(surface);
