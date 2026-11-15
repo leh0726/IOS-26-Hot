@@ -1,0 +1,43 @@
+From c889a61e6e3eb57465a1394748b9cf479bff2d49 Mon Sep 17 00:00:00 2001
+From: y2q <y2q@local>
+Date: Sun, 15 Nov 2026 11:11:51 +0900
+Subject: [PATCH] y2q: GPU clock measured from CP cycle counter in the 5 s
+ stats
+
+---
+ bsd/dev/sweet_gpu.c | 19 +++++++++++++++++++
+ 1 file changed, 19 insertions(+)
+
+diff --git a/bsd/dev/sweet_gpu.c b/bsd/dev/sweet_gpu.c
+index 16566b7..f97661c 100644
+--- a/bsd/dev/sweet_gpu.c
++++ b/bsd/dev/sweet_gpu.c
+@@ -426,6 +426,25 @@ gpu_stats_locked(void)
+ 		a6_log("5s: %u submits (%u missed), GPU busy %llu ms (%llu%%), longest %llu us, mean %llu us;%s\n",
+ 		    gstat_n, gstat_missed, gstat_busy / 19200, gstat_busy * 100 / 19200 / (ns / 1000000),
+ 		    gstat_longest * 10 / 192, gstat_busy * 10 / 192 / gstat_n, who);
++		{
++			/*
++			 * y2q (0198): the GPU's real clock: CP_PERFCTR_CP_SEL[0] = always count (GPU core cycles while
++			 * its clock runs), over the 5 s and over the busy time. A frame took ~10x the GPU time its work
++			 * should (3 passes, 5.3 Mpx: 12 ms at "587 MHz").
++			 */
++			static uint64_t last_cyc;
++			uint32_t hi = a6_rd(A6_GREG(0x401)), lo = a6_rd(A6_GREG(0x400)), hi2 = a6_rd(A6_GREG(0x401));
++			if (hi2 != hi) {
++				lo = a6_rd(A6_GREG(0x400));
++			}
++			uint64_t cyc = (uint64_t)hi2 << 32 | lo, d = cyc - last_cyc;
++			uint64_t busy_us = gstat_busy * 10 / 192;
++			if (last_cyc != 0) {
++				a6_log("5s: GPU clock %llu MHz over the 5 s, %llu MHz over the busy time (%llu Mcycles)\n",
++				    d / (ns / 1000), busy_us ? d / busy_us : 0, d / 1000000);
++			}
++			last_cyc = cyc;
++		}
+ 	}
+ 	gstat_n = gstat_missed = 0;
+ 	gstat_busy = gstat_longest = 0;
+-- 
+2.53.0
+

@@ -1,0 +1,26 @@
+From 939cfc5c44b588fc8d01cd59d6cfb9b3ac6a6215 Mon Sep 17 00:00:00 2001
+From: y2q <y2q@local>
+Date: Sun, 15 Nov 2026 11:17:18 +0900
+Subject: [PATCH] y2q: A650 GBIF QSB side registers (Linux hw_init)
+
+---
+ bsd/dev/sweet_a6xx.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/bsd/dev/sweet_a6xx.c b/bsd/dev/sweet_a6xx.c
+index 6cc3dc0..9cde98d 100644
+--- a/bsd/dev/sweet_a6xx.c
++++ b/bsd/dev/sweet_a6xx.c
+@@ -1078,6 +1078,9 @@ static int gpu_cp_init(struct a6_gpu *g, bool resume)
+ 		/* 64-bit addressing: CP VSC GRAS RB PC HLSQ VFD VPC UCHE SP TPL1 SECVID */
+ 		{ 0x0842, 1 }, { 0x0c01, 1 }, { 0x8601, 1 }, { 0x8e05, 1 }, { 0x9e01, 1 }, { 0xbe05, 1 },
+ 		{ 0xa601, 1 }, { 0x9601, 1 }, { 0x0e00, 1 }, { 0xae01, 1 }, { 0xb601, 1 }, { 0xf810, 1 },
++		/* y2q (0199): GBIF QSB_SIDE0..3 (Linux a6xx_hw_init, a640/a650 family; G986N-iOS step 20): left at reset they
++		 * held the GPU's bus traffic down (a frame of 3 passes, 5.3 Mpx took 12 ms at a measured 587 MHz) */
++		{ 0x3c03, 0x00071620 }, { 0x3c04, 0x00071620 }, { 0x3c05, 0x00071620 }, { 0x3c06, 0x00071620 },
+ 		{ 0x0011, 3 },				/* RBBM_GBIF_CLIENT_QOS_CNTL */
+ 		{ 0x050b, 0xffffffff },			/* RBBM_PERFCTR_GPU_BUSY_MASKED */
+ 		/* UCHE: write range max, trap base, write-through base (trap 0x1fffffffff000) */
+-- 
+2.53.0
+

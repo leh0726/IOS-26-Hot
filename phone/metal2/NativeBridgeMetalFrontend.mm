@@ -1556,8 +1556,17 @@ static void completed(void *context) {
 - (void)dealloc {nmb_queue_release(_handle);}
 - (id<MTLCommandBuffer>)commandBuffer {
  NmbCommandBuffer *handle=nmb_command_buffer_new(_handle);
- if(!handle){NBLOG(@"native-metal: commandBuffer refused: %@",lastError());return nil;}
- NBCommandBuffer *commandBuffer=[NBCommandBuffer new];commandBuffer.handle=handle;commandBuffer.queue=self;return (id<MTLCommandBuffer>)commandBuffer;
+ NBCommandBuffer *commandBuffer=[NBCommandBuffer new];commandBuffer.queue=self;
+ if(!handle) {
+  // y2q: never nil. RenderBox caches its encoder's IMPs with methodForSelector: and calls them; a nil command buffer
+  // gave nil encoders, NULL IMPs and a jump to 0 (SpringBoard died after a GPU reset, then once more on a page swipe).
+  // A command buffer without a runtime handle fails locally: encoders are refused, commit completes it with an error.
+  static std::atomic<uint32_t> said{0};
+  if(said.fetch_add(1)<8)NBLOG(@"native-metal: commandBuffer refused: %@ (a failing command buffer instead of nil)",lastError());
+  commandBuffer.encodeFailure=@"no runtime command buffer";
+  return (id<MTLCommandBuffer>)commandBuffer;
+ }
+ commandBuffer.handle=handle;return (id<MTLCommandBuffer>)commandBuffer;
 }
 - (id<MTLCommandBuffer>)commandBufferWithUnretainedReferences {return [self commandBuffer];}
 - (void)setSubmissionQueue:(dispatch_queue_t)queue {(void)queue;}   // submission happens on the caller's thread here
