@@ -1,0 +1,107 @@
+From 0e6b7778bc0142ee903b99da1ead3933a02681e2 Mon Sep 17 00:00:00 2001
+From: y2q <y2q@local>
+Date: Sun, 15 Nov 2026 10:38:58 +0900
+Subject: [PATCH] y2q: touch watchdog: sensing on again after silence, stuck
+ fingers let go
+
+---
+ bsd/dev/y2q_sec_ts.c | 55 +++++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 54 insertions(+), 1 deletion(-)
+
+diff --git a/bsd/dev/y2q_sec_ts.c b/bsd/dev/y2q_sec_ts.c
+index 1d7d86f..69dfe9b 100644
+--- a/bsd/dev/y2q_sec_ts.c
++++ b/bsd/dev/y2q_sec_ts.c
+@@ -983,6 +983,12 @@ handle_event(const uint8_t *e)
+ 		printf("touch: event %02x %02x %02x %02x %02x %02x %02x %02x\n", e[0], e[1], e[2], e[3], e[4], e[5], e[6], e[7]);
+ 	}
+ 	if (kind != 0 || id == 0 || id > SEC_TS_FINGERS) {
++		static unsigned said_status;
++		if (kind != 0 && said_status < 24) {
++			said_status++;
++			printf("touch: status event %02x %02x %02x %02x %02x %02x %02x %02x\n", e[0], e[1], e[2], e[3], e[4], e[5],
++			    e[6], e[7]);
++		}
+ 		return;         /* a status or vendor event, or no finger */
+ 	}
+ 	id--;
+@@ -1045,12 +1051,46 @@ any_finger_down(void)
+  * for less than the 8 ms between two looks, it seems. Asked when nothing waits, the chip
+  * answers an event of zeroes.
+  */
++/*
++ * y2q (0197): touch stopped for good once, 34 s into a boot: a finger down, then no event again (no failed
++ * read either) -- the chip had stopped sensing (a reset of its own, it seems). Silent for WATCH_IDLE_S:
++ * sensing is switched on again (harmless when it is on), and a finger held down without an event for
++ * WATCH_STUCK_S is let go (iOS would hold it for ever).
++ */
++#define WATCH_IDLE_S    3
++#define WATCH_STUCK_S   4
++
++static void
++watch_revive(uint64_t silent_s, bool stuck)
++{
++	static unsigned said;
++	uint8_t boot = 0;
++	const char *p1 = sec_ts_read(SEC_TS_BOOT_STATUS, &boot, 1);
++	if (stuck) {
++		for (unsigned i = 0; i < SEC_TS_FINGERS; i++) {
++			if (finger[i].down) {
++				finger[i].down = false;
++				sweet_hid_touch((int)i, 0, (int)finger[i].x, (int)finger[i].y);
++			}
++		}
++	}
++	const char *p2 = sec_ts_command(SEC_TS_SENSE_ON);
++	if (stuck || said < 6 || (p1 != NULL) || boot != 0x20) {
++		said++;
++		printf("touch: watchdog: %llu s without an event%s; boot status %#x (%s), sense on: %s; int %s\n", silent_s,
++		    stuck ? ", a finger let go" : "", boot, p1 ? p1 : "ok", p2 ? p2 : "ok",
++		    (rd(GPIO_IO(PIN_INT)) & 1) ? "high" : "low");
++	}
++}
++
+ static void
+ step_watch(void)
+ {
+ 	static uint8_t events[SEC_TS_EVENT_COUNT * SEC_TS_EVENT_SIZE];
+ 	unsigned left, ticks = 0;
+ 	const char *problem;
++	uint64_t last_event = mach_absolute_time(), last_revive = 0, sec_abs;
++	nanoseconds_to_absolutetime(NSEC_PER_SEC, &sec_abs);
+ 
+ 	printf("touch: step 7: watching the interrupt line every %u us, posting the touches\n", POLL_US);
+ 	for (;;) {
+@@ -1084,6 +1124,7 @@ step_watch(void)
+ 				    read_longest_ns / 1000);
+ 			}
+ 			if (problem == NULL && events[0] != 0) {
++				last_event = mach_absolute_time();
+ 				for (unsigned i = 0; problem == NULL && i <= left && events[i * SEC_TS_EVENT_SIZE] != 0; i++) {
+ 					handle_event(events + i * SEC_TS_EVENT_SIZE);
+ 				}
+@@ -1092,8 +1133,20 @@ step_watch(void)
+ 				printf("touch: reading events: %s\n", problem);
+ 			}
+ 		}
++		{
++			uint64_t now = mach_absolute_time();
++			uint64_t silent = (now - last_event) / sec_abs;
++			bool stuck = any_finger_down() && silent >= WATCH_STUCK_S;
++			if ((silent >= WATCH_IDLE_S && now - last_revive > WATCH_IDLE_S * sec_abs) || stuck) {
++				last_revive = now;
++				watch_revive(silent, stuck);
++				if (stuck) {
++					last_event = now;
++				}
++			}
++		}
+ 		/* once in a while a line about what has happened */
+-		if (++ticks % (60 * 1000000 / POLL_US) == 10 * 1000000 / POLL_US) {
++		if (++ticks % (20 * 1000000 / POLL_US) == 10 * 1000000 / POLL_US) {
+ 			printf("touch: so far %llu events, %llu touches, %llu failed reads; a read takes %llu us (the longest %llu)\n",
+ 			    events_read, touches_down, read_errors, reads ? read_ns / reads / 1000 : 0, read_longest_ns / 1000);
+ 		}
+-- 
+2.53.0
+

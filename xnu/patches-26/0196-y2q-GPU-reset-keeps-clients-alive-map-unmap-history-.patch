@@ -1,0 +1,214 @@
+From 7b680c5edcaea4ca06dca785c9cb3ddd26659936 Mon Sep 17 00:00:00 2001
+From: y2q <y2q@local>
+Date: Sun, 15 Nov 2026 10:33:29 +0900
+Subject: [PATCH] y2q: GPU reset keeps clients alive; map/unmap history at
+ client write faults
+
+---
+ bsd/dev/sweet_a6xx.c                  | 17 ++++++
+ bsd/dev/sweet_a6xx.h                  |  3 +-
+ bsd/dev/sweet_gpu.c                   | 78 +++++++++++++++++++++++++++
+ iokit/Kernel/arm/SweetAccelerator.cpp | 14 ++++-
+ 4 files changed, 110 insertions(+), 2 deletions(-)
+
+diff --git a/bsd/dev/sweet_a6xx.c b/bsd/dev/sweet_a6xx.c
+index 54d01c1..6cc3dc0 100644
+--- a/bsd/dev/sweet_a6xx.c
++++ b/bsd/dev/sweet_a6xx.c
+@@ -998,6 +998,23 @@ void a6_unmap(struct a6_gpu *g, uint64_t iova, uint64_t size)
+ 	}
+ }
+ 
++uint64_t a6_lookup(struct a6_gpu *g, uint64_t iova)
++{
++	uint64_t e = 0, l2, l3;
++	a6_read(a6_pool_pa(g, A6_OFF_GT_L1) + 8 * ((iova >> 30) & 0x1ff), &e, 8);
++	l2 = (e & 3) == 3 ? e & 0xfffffff000ull : 0;
++	if (!l2)
++		return 0;
++	e = 0;
++	a6_read(l2 + 8 * ((iova >> 21) & 0x1ff), &e, 8);
++	l3 = (e & 3) == 3 ? e & 0xfffffff000ull : 0;
++	if (!l3)
++		return 0;
++	e = 0;
++	a6_read(l3 + 8 * ((iova >> 12) & 0x1ff), &e, 8);
++	return e;
++}
++
+ void a6_unmap_high(struct a6_gpu *g)
+ {
+ 	static const uint64_t zeros[511];
+diff --git a/bsd/dev/sweet_a6xx.h b/bsd/dev/sweet_a6xx.h
+index 07cdb1a..1b5df76 100644
+--- a/bsd/dev/sweet_a6xx.h
++++ b/bsd/dev/sweet_a6xx.h
+@@ -120,7 +120,8 @@ uint64_t a6_submit_time(const struct a6_gpu *g, uint32_t fence);
+ /* 4K pages (AP=01, NC) at iova -> pa; tables from the arena. Then a6_tlb_flush. */
+ int a6_map(struct a6_gpu *g, uint64_t iova, uint64_t pa, uint64_t size);
+ int a6_map_pages(struct a6_gpu *g, uint64_t iova, const uint64_t *pages, uint32_t npages, uint32_t page_size);
+-void a6_unmap(struct a6_gpu *g, uint64_t iova, uint64_t size);	/* clear 4K entries; then a6_tlb_flush */
++void a6_unmap(struct a6_gpu *g, uint64_t iova, uint64_t size);
++uint64_t a6_lookup(struct a6_gpu *g, uint64_t iova);	/* y2q (0196): the 4K PTE at iova, 0 if none */	/* clear 4K entries; then a6_tlb_flush */
+ void a6_unmap_high(struct a6_gpu *g);	/* drop all mappings above 1 GB, reset the arena */
+ void a6_tlb_flush(const struct a6_gpu *g);
+ int a6_clear_fault(const struct a6_gpu *g);	/* 1 if an SMMU fault was cleared */
+diff --git a/bsd/dev/sweet_gpu.c b/bsd/dev/sweet_gpu.c
+index f7872d7..16566b7 100644
+--- a/bsd/dev/sweet_gpu.c
++++ b/bsd/dev/sweet_gpu.c
+@@ -458,6 +458,72 @@ gpu_hung_locked(uint32_t hang_ms)
+ 	return ns > hang_ms * 1000000ULL;
+ }
+ 
++/*
++ * y2q (0196): the last VM_HIST maps and unmaps of the v2 windows, so a client write fault can be told apart:
++ * an iova unmapped a moment ago (a use after free), or one never mapped (the client wrote past its BO).
++ */
++#define VM_HIST         1024
++static struct { uint64_t iova, len, abs; uint32_t fence; int pid; bool map; } vm_hist[VM_HIST];
++static uint32_t vm_hist_n;
++
++static void
++vm_note_locked(uint64_t iova, uint64_t len, bool map)
++{
++	uint32_t i = vm_hist_n++ % VM_HIST;
++	vm_hist[i].iova = iova;
++	vm_hist[i].len = len;
++	vm_hist[i].abs = mach_absolute_time();
++	vm_hist[i].fence = gpu.fence;
++	vm_hist[i].pid = proc_selfpid();
++	vm_hist[i].map = map;
++}
++
++static void
++vm_explain_locked(uint64_t far)
++{
++	if (far < 0x1000000000ULL) {
++		return;
++	}
++	uint64_t pte = a6_lookup(&gpu, far), now = mach_absolute_time();
++	a6_log("fault va %llx: pte %llx (%s), done fence %u\n", far, pte, (pte & 3) == 3 ? "mapped" : "not mapped",
++	    a6_fence_read(&gpu));
++	uint32_t n = vm_hist_n < VM_HIST ? vm_hist_n : VM_HIST, shown = 0;
++	uint64_t best_below = 0, best_above = ~0ULL;
++	int bi = -1, ai = -1;
++	for (uint32_t k = 0; k < n; k++) {
++		uint32_t i = (vm_hist_n - 1 - k) % VM_HIST;
++		uint64_t a = vm_hist[i].iova, e = a + vm_hist[i].len, ns;
++		if (far >= a && far < e) {
++			if (shown < 8) {
++				absolutetime_to_nanoseconds(now - vm_hist[i].abs, &ns);
++				a6_log("  hit: %s %llx+%llx by pid %d %llu ms ago at fence %u\n", vm_hist[i].map ? "map" : "UNMAP",
++				    a, vm_hist[i].len, vm_hist[i].pid, ns / 1000000ULL, vm_hist[i].fence);
++			}
++			shown++;
++		} else if (vm_hist[i].map && (far >> 32) == (a >> 32)) {
++			if (e <= far && e > best_below) {
++				best_below = e;
++				bi = (int)i;
++			}
++			if (a > far && a < best_above) {
++				best_above = a;
++				ai = (int)i;
++			}
++		}
++	}
++	if (shown == 0) {
++		a6_log("  no map or unmap of it in the last %u\n", n);
++	}
++	if (bi >= 0) {
++		a6_log("  nearest map below: %llx+%llx (ends %llx bytes before)\n", vm_hist[bi].iova, vm_hist[bi].len,
++		    far - best_below);
++	}
++	if (ai >= 0) {
++		a6_log("  nearest map above: %llx+%llx (starts %llx bytes after)\n", vm_hist[ai].iova, vm_hist[ai].len,
++		    best_above - far);
++	}
++}
++
+ /* Soft reset + CP re-init; everything queued is lost, its fences complete at once (waiters return). */
+ static void
+ gpu_recover_locked(const char *why)
+@@ -471,6 +537,9 @@ gpu_recover_locked(const char *why)
+ 	    a6_rd(A6_GREG(0x806)), gpu.wptr, a6_rd(A6_GREG(0x929)), a6_rd(A6_GREG(0x928)), a6_rd(A6_GREG(0x92a)),
+ 	    a6_rd(A6_GREG(0x92c)), a6_rd(A6_GREG(0x92b)), a6_rd(A6_GREG(0x92d)), a6_rd(A6_GREG(0x210)),
+ 	    a6_rd(A6_GREG(0x908)));
++	if (fsr != 0) {
++		vm_explain_locked(far);
++	}
+ 	lost[recoveries % LOST_RING].lo = done;
+ 	lost[recoveries % LOST_RING].hi = gpu.fence;
+ 	recoveries++;
+@@ -1317,6 +1386,8 @@ sweet_gpu_map_at(uint64_t iova, const uint64_t *pages, uint32_t npages)
+ 	int rc = a6_map_pages(&gpu, iova, pages, npages, 0x1000);
+ 	if (rc) {
+ 		a6_unmap(&gpu, iova, (uint64_t)npages << 12);
++	} else {
++		vm_note_locked(iova, (uint64_t)npages << 12, true);
+ 	}
+ 	a6_tlb_flush(&gpu);
+ 	lck_mtx_unlock(&sweet_gpu_lock);
+@@ -1334,6 +1405,8 @@ sweet_gpu_map_at_noflush(uint64_t iova, const uint64_t *pages, uint32_t npages)
+ 	int rc = a6_map_pages(&gpu, iova, pages, npages, 0x1000);
+ 	if (rc) {
+ 		a6_unmap(&gpu, iova, (uint64_t)npages << 12);
++	} else {
++		vm_note_locked(iova, (uint64_t)npages << 12, true);
+ 	}
+ 	lck_mtx_unlock(&sweet_gpu_lock);
+ 	return rc;
+@@ -1372,6 +1445,9 @@ sweet_gpu_map_pa_range(uint64_t iova, uint64_t pa, uint64_t bytes)
+ 			break;
+ 		}
+ 	}
++	if (rc == 0) {
++		vm_note_locked(iova, bytes, true);
++	}
+ 	a6_tlb_flush(&gpu);
+ 	lck_mtx_unlock(&sweet_gpu_lock);
+ 	return rc;
+@@ -1386,6 +1462,7 @@ sweet_gpu_unmap_at(uint64_t iova, uint64_t len)
+ 	lck_mtx_lock(&sweet_gpu_lock);
+ 	if (gpu_ready) {
+ 		a6_unmap(&gpu, iova, len);
++		vm_note_locked(iova, len, false);
+ 		a6_tlb_flush(&gpu);
+ 	}
+ 	lck_mtx_unlock(&sweet_gpu_lock);
+@@ -1404,6 +1481,7 @@ sweet_gpu_unmap_at_batch(const uint64_t *iovas, const uint64_t *lens, unsigned c
+ 		for (unsigned i = 0; i < count; i++) {
+ 			if (iovas[i] >= WIN_BASE && lens[i] != 0) {
+ 				a6_unmap(&gpu, iovas[i], lens[i]);
++				vm_note_locked(iovas[i], lens[i], false);
+ 				any = true;
+ 			}
+ 		}
+diff --git a/iokit/Kernel/arm/SweetAccelerator.cpp b/iokit/Kernel/arm/SweetAccelerator.cpp
+index 0c65afa..62a9caf 100644
+--- a/iokit/Kernel/arm/SweetAccelerator.cpp
++++ b/iokit/Kernel/arm/SweetAccelerator.cpp
+@@ -1225,7 +1225,19 @@ SweetAcceleratorUserClient::v2Method(uint32_t method, const void *in, uint32_t i
+ 		if (sweet_gpu_lost(&fEpoch, fLastFence)) {
+ 			fFaults++;
+ 		}
+-		rp->faults = fFaults;
++		/*
++		 * y2q (0196): Turnip marks the device lost for good when this changes, and backboardd then draws
++		 * nothing again (the screen froze after one GPU fault). Its lost frame is only a glitch, so the count
++		 * stays 0 unless sweetgpulost=1.
++		 */
++		{
++			static int report = -1;
++			if (report < 0) {
++				int v = 0;
++				report = PE_parse_boot_argn("sweetgpulost", &v, sizeof(v)) && v ? 1 : 0;
++			}
++			rp->faults = report ? fFaults : 0;
++		}
+ 		return kIOReturnSuccess;
+ 	}
+ 	case NativeAdrenoMethodSetMetadata:
+-- 
+2.53.0
+

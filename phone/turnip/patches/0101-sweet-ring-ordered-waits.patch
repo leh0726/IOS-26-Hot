@@ -1,0 +1,24 @@
+--- a/src/freedreno/vulkan/tu_knl_darwin.cc
++++ b/src/freedreno/vulkan/tu_knl_darwin.cc
+@@ -862,9 +862,20 @@
+    struct tu_darwin_queue_submit *submit = (struct tu_darwin_queue_submit *)_submit;
+    struct tu_device *dev = queue->device;
+ 
+-   /* The kernel client has one ring and no GPU-side waits: wait on the CPU before submitting. */
++   /* The kernel client has one ring and no GPU-side waits: wait on the CPU before submitting.
++    * y2q: only for a sync not yet resolved to a submission. One already on the ring (a fence) is
++    * ordered by the ring itself: the kernel ends every submission with WAIT_FOR_IDLE + CACHE_FLUSH_TS
++    * and starts the next with the CCU invalidates (Linux msm skips same-ring dependencies the same
++    * way). Waiting for it on the CPU made every command buffer of a frame wait for the one before to
++    * finish, plus a wakeup: ~17 ms from commit to completion for ~3 ms of GPU work, 30-45 fps.
++    * TU_DARWIN_CPU_WAIT=1 restores the CPU wait. */
++   static int cpu_wait = -1;
++   if (cpu_wait < 0)
++      cpu_wait = debug_get_bool_option("TU_DARWIN_CPU_WAIT", false) ? 1 : 0;
+    for (uint32_t i = 0; i < wait_count; i++) {
+       struct vk_darwin_sync *s = container_of(waits[i].sync, struct vk_darwin_sync, vk);
++      if (!cpu_wait && s->state != DARWIN_SYNC_UNSIGNALED)
++         continue;
+       VkResult result = darwin_sync_wait(dev, s, UINT64_MAX);
+       if (result != VK_SUCCESS)
+          return vk_device_set_lost(&dev->vk, "wait before submit failed");

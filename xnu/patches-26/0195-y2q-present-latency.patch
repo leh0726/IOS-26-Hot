@@ -1,0 +1,49 @@
+From c6a6a89d04e8323cba59a28064d464f8c256f5bb Mon Sep 17 00:00:00 2001
+From: y2q <y2q@local>
+Date: Sun, 15 Nov 2026 10:21:47 +0900
+Subject: [PATCH] y2q: 16 present IB slots, 50 us fence polling
+
+---
+ bsd/dev/sweet_gpu.c | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/bsd/dev/sweet_gpu.c b/bsd/dev/sweet_gpu.c
+index 747809e..f7872d7 100644
+--- a/bsd/dev/sweet_gpu.c
++++ b/bsd/dev/sweet_gpu.c
+@@ -598,8 +598,8 @@ sweet_gpu_map_surface(uint64_t key, const uint64_t *pages, uint32_t npages, uint
+ 	return s;
+ }
+ 
+-#define IB_OFF          A6_OFF_FREE     /* the present IBs in the pool (four 16 KB slots: 0x400000..0x410000) */
+-#define PRESENT_SLOTS   4u
++#define IB_OFF          0x1800000ULL    /* y2q (0195): the present IBs, 16 x 16 KB past the 1440x3200 stage (pool 32 MB) */
++#define PRESENT_SLOTS   16u     /* y2q (0195): was 4: SwapEnd blocked on a slot, 2-4 ms of backboardd a frame */
+ #define PRESENT_IB(k)   (IB_OFF + 0x4000ULL * (k))
+ 
+ static uint32_t present_fence[PRESENT_SLOTS];   /* of the present last queued from each IB slot */
+@@ -1086,8 +1086,8 @@ sweet_gpu_wait_fence(uint32_t fence, uint32_t timeout_ms)
+ 			delay(5);
+ 		} else if (!ml_at_interrupt_context()) {
+ 			uint64_t rem_us = (timeout_ns - ns) / 1000ULL;
+-			if (rem_us > 250) {
+-				rem_us = 250;
++			if (rem_us > 50) {
++				rem_us = 50;     /* y2q (0195): was 250 us: frame completions were seen up to 0.25 ms late */
+ 			}
+ 			if (rem_us >= 50) {
+ 				delay_for_interval((uint32_t)rem_us, (uint32_t)NSEC_PER_USEC);
+@@ -1479,8 +1479,8 @@ sweet_gpu_wait_fence_ns(uint32_t fence, uint64_t timeout_ns)
+ 			delay(5);
+ 		} else if (!ml_at_interrupt_context()) {
+ 			uint64_t rem_us = (timeout_ns - ns) / 1000ULL;
+-			if (rem_us > 250) {
+-				rem_us = 250;
++			if (rem_us > 50) {
++				rem_us = 50;     /* y2q (0195): was 250 us: frame completions were seen up to 0.25 ms late */
+ 			}
+ 			if (rem_us >= 50) {
+ 				delay_for_interval((uint32_t)rem_us, (uint32_t)NSEC_PER_USEC);
+-- 
+2.53.0
+
