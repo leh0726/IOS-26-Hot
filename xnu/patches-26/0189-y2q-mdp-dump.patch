@@ -1,0 +1,81 @@
+From 55f5c212cc063f10c81aeb06a545a1fa6ac7a898 Mon Sep 17 00:00:00 2001
+From: y2q <y2q@local>
+Date: Sun, 15 Nov 2026 09:54:11 +0900
+Subject: [PATCH] y2q: dump the display engine state ABL left (diag)
+
+---
+ bsd/dev/sweet_gpu.c                   | 37 +++++++++++++++++++++++++++
+ iokit/Kernel/arm/SweetFramebuffer.cpp |  2 ++
+ 2 files changed, 39 insertions(+)
+
+diff --git a/bsd/dev/sweet_gpu.c b/bsd/dev/sweet_gpu.c
+index c8da61e..0a2685d 100644
+--- a/bsd/dev/sweet_gpu.c
++++ b/bsd/dev/sweet_gpu.c
+@@ -490,6 +490,43 @@ gpu_recover_locked(const char *why)
+ #define SSPP_YSTRIDE0   0x24
+ #define CTL0_FLUSH      (MDP + 0x2000 + 0x18)
+ 
++/* y2q (0189): what ABL left in the display engine (SM8250 DPU, Linux dpu_hw_catalog sm8250 offsets from 0x0ae01000) */
++void sweet_gpu_mdp_dump(void);
++void
++sweet_gpu_mdp_dump(void)
++{
++	static const struct { const char *name; uint32_t off; } sspp[] = {
++		{ "VIG0", 0x4000 }, { "VIG1", 0x6000 }, { "VIG2", 0x8000 }, { "VIG3", 0xa000 },
++		{ "DMA0", 0x24000 }, { "DMA1", 0x26000 }, { "DMA2", 0x28000 }, { "DMA3", 0x2a000 },
++	};
++	const uint64_t base = 0x0ae01000ULL;
++	for (unsigned i = 0; i < sizeof(sspp) / sizeof(sspp[0]); i++) {
++		uint64_t p = base + sspp[i].off;
++		uint32_t src_size = a6_rd(p + 0x00), img = a6_rd(p + 0x04), xy = a6_rd(p + 0x08), out = a6_rd(p + 0x0c);
++		uint32_t oxy = a6_rd(p + 0x10), addr = a6_rd(p + 0x14), ystr = a6_rd(p + 0x24), fmt = a6_rd(p + 0x30);
++		uint32_t opm = a6_rd(p + 0x38);
++		a6_log("mdp %s: src %ux%u img %ux%u xy %u,%u out %ux%u at %u,%u addr %08x stride %u fmt %08x op %08x\n",
++		    sspp[i].name, src_size & 0xffff, src_size >> 16, img & 0xffff, img >> 16, xy & 0xffff, xy >> 16,
++		    out & 0xffff, out >> 16, oxy & 0xffff, oxy >> 16, addr, ystr & 0xffff, fmt, opm);
++		if (i < 4) {
++			uint64_t sc = p + 0xa00;
++			a6_log("mdp %s scaler: hw %08x op %08x ph_y %08x %08x step %08x %08x size %08x %08x\n", sspp[i].name,
++			    a6_rd(sc + 0x00), a6_rd(sc + 0x04), a6_rd(sc + 0x24), a6_rd(sc + 0x28), a6_rd(sc + 0x34),
++			    a6_rd(sc + 0x38), a6_rd(sc + 0x48), a6_rd(sc + 0x4c));
++		}
++	}
++	for (unsigned l = 0; l < 4; l++) {
++		uint64_t p = base + 0x44000 + 0x1000ULL * l;
++		a6_log("mdp LM%u: op %08x out %08x border %08x st0 %08x %08x st1 %08x %08x\n", l, a6_rd(p + 0x00),
++		    a6_rd(p + 0x04), a6_rd(p + 0x08), a6_rd(p + 0x20), a6_rd(p + 0x24), a6_rd(p + 0x50), a6_rd(p + 0x54));
++	}
++	for (unsigned c = 0; c < 2; c++) {
++		uint64_t p = base + 0x1000 + 0x200ULL * c;
++		a6_log("mdp CTL%u: layer %08x %08x %08x top %08x flush %08x start %08x\n", c, a6_rd(p + 0x00),
++		    a6_rd(p + 0x04), a6_rd(p + 0x08), a6_rd(p + 0x14), a6_rd(p + 0x18), a6_rd(p + 0x1c));
++	}
++}
++
+ /* ABL scans out through VIG0 + VIG1 (540 columns each); autorefresh picks a flushed change up. */
+ void
+ sweet_gpu_panel_stride(uint32_t stride)
+diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
+index cd28726..f7e1446 100644
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -39,6 +39,7 @@
+ #include <sweet_diag.h>
+ 
+ extern "C" int sweet_console_muted;     /* osfmk/console/serial_console.c */
++extern "C" void sweet_gpu_mdp_dump(void);   /* bsd/dev/sweet_gpu.c (0189) */
+ 
+ /* bsd/dev/sweet_gpu.c: the Adreno 640's 2D engine scales each frame onto the panel (boot-arg sweetgpu=1). */
+ extern "C" {
+@@ -649,6 +650,7 @@ AppleCLCD::presentGPU(const uint8_t *rec)
+ 		fGPU = true;
+ 		IOLockUnlock(fLock);
+ 		IOLog("SWEET FB: frames now scaled to fit by the GPU (panel stride %u)\n", fRowBytes);
++		sweet_gpu_mdp_dump();     /* y2q 0189 */
+ 	}
+ 	static int always_clean = -1;
+ 	if (always_clean < 0) {
+-- 
+2.53.0
+

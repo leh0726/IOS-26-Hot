@@ -1,0 +1,25 @@
+From 4ff6d60e7292b0e629a14ebc20aee4dc55b9630c Mon Sep 17 00:00:00 2001
+From: y2q <y2q@local>
+Date: Sun, 15 Nov 2026 10:07:51 +0900
+Subject: [PATCH] y2q: LM flush with the CTL bit
+
+---
+ bsd/dev/sweet_gpu.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/bsd/dev/sweet_gpu.c b/bsd/dev/sweet_gpu.c
+index bf95aaf..48b8543 100644
+--- a/bsd/dev/sweet_gpu.c
++++ b/bsd/dev/sweet_gpu.c
+@@ -779,7 +779,7 @@ sweet_gpu_present(int s, uintptr_t kva, uint32_t offset, uint32_t w, uint32_t h,
+ 					before[l][1] = a6_rd(st4 + 4);
+ 					a6_wr(st4 + 4, (before[l][1] & ~0x00ff0000u) | (fg << 16));
+ 				}
+-				a6_wr(CTL0_FLUSH, (1u << 6) | (1u << 7));
++				a6_wr(CTL0_FLUSH, (1u << 6) | (1u << 7) | (1u << 17));   /* LM0, LM1, and the CTL itself (Linux CTL_FLUSH_MASK_CTL) */
+ 				for (int l = 0; l < 2; l++) {
+ 					uint64_t st4 = (l ? lm1 : lm0) + 0x80;
+ 					after[l][0] = a6_rd(st4);
+-- 
+2.53.0
+

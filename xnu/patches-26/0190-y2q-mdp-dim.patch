@@ -1,0 +1,53 @@
+From b778486f1376498020529ba912ee7a865ec0ae87 Mon Sep 17 00:00:00 2001
+From: y2q <y2q@local>
+Date: Sun, 15 Nov 2026 09:58:30 +0900
+Subject: [PATCH] y2q: brightness dim in the layer mixers (constant alpha),
+ single GPU present pass
+
+---
+ bsd/dev/sweet_gpu.c | 29 +++++++++++++++++++++++++++++
+ 1 file changed, 29 insertions(+)
+
+diff --git a/bsd/dev/sweet_gpu.c b/bsd/dev/sweet_gpu.c
+index 0a2685d..1ab94cb 100644
+--- a/bsd/dev/sweet_gpu.c
++++ b/bsd/dev/sweet_gpu.c
+@@ -754,6 +754,35 @@ sweet_gpu_present(int s, uintptr_t kva, uint32_t offset, uint32_t w, uint32_t h,
+ 	if (dim > 255) {
+ 		dim = 255;
+ 	}
++	/*
++	 * y2q (0190): dim in the display engine instead of on the GPU (boot-arg sweetmdpdim=0: GPU). VIG0/VIG1 sit at
++	 * blend stage 4 of LM0/LM1 over a black border: a constant foreground alpha of 255 - dim blends the frame
++	 * toward black there, and the GPU always does the single scaled blit (the dim pass staged and copied the whole
++	 * panel again: 2.4 ms -> 4.7 ms a present).
++	 */
++	{
++		static int mdpdim = -1;
++		static uint32_t mdp_dim_now = 0xffffffffu;
++		if (mdpdim < 0) {
++			int v = 1;
++			PE_parse_boot_argn("sweetmdpdim", &v, sizeof(v));
++			mdpdim = v;
++		}
++		if (mdpdim) {
++			if (dim != mdp_dim_now) {
++				const uint64_t lm0 = 0x0ae01000ULL + 0x44000ULL, lm1 = lm0 + 0x1000ULL;
++				const uint32_t fg = 255u - dim;
++				for (int l = 0; l < 2; l++) {
++					uint64_t st4 = (l ? lm1 : lm0) + 0x80;
++					uint32_t ca = a6_rd(st4 + 4);
++					a6_wr(st4 + 4, (ca & ~0x00ff0000u) | (fg << 16));
++				}
++				a6_wr(CTL0_FLUSH, (1u << 6) | (1u << 7));
++				mdp_dim_now = dim;
++			}
++			dim = 0;
++		}
++	}
+ 	uint32_t n = 0;
+ 	if (dim > 0) {
+ 		/*
+-- 
+2.53.0
+

@@ -1,0 +1,44 @@
+From a2ad1618cc66d90c501d35a458ae7023b76e011a Mon Sep 17 00:00:00 2001
+From: y2q <y2q@local>
+Date: Sun, 15 Nov 2026 10:03:28 +0900
+Subject: [PATCH] y2q: log LM constant alpha writes (diag)
+
+---
+ bsd/dev/sweet_gpu.c | 17 +++++++++++++++--
+ 1 file changed, 15 insertions(+), 2 deletions(-)
+
+diff --git a/bsd/dev/sweet_gpu.c b/bsd/dev/sweet_gpu.c
+index 1ab94cb..bf95aaf 100644
+--- a/bsd/dev/sweet_gpu.c
++++ b/bsd/dev/sweet_gpu.c
+@@ -772,12 +772,25 @@ sweet_gpu_present(int s, uintptr_t kva, uint32_t offset, uint32_t w, uint32_t h,
+ 			if (dim != mdp_dim_now) {
+ 				const uint64_t lm0 = 0x0ae01000ULL + 0x44000ULL, lm1 = lm0 + 0x1000ULL;
+ 				const uint32_t fg = 255u - dim;
++				uint32_t before[2][2], after[2][2];
+ 				for (int l = 0; l < 2; l++) {
+ 					uint64_t st4 = (l ? lm1 : lm0) + 0x80;
+-					uint32_t ca = a6_rd(st4 + 4);
+-					a6_wr(st4 + 4, (ca & ~0x00ff0000u) | (fg << 16));
++					before[l][0] = a6_rd(st4);
++					before[l][1] = a6_rd(st4 + 4);
++					a6_wr(st4 + 4, (before[l][1] & ~0x00ff0000u) | (fg << 16));
+ 				}
+ 				a6_wr(CTL0_FLUSH, (1u << 6) | (1u << 7));
++				for (int l = 0; l < 2; l++) {
++					uint64_t st4 = (l ? lm1 : lm0) + 0x80;
++					after[l][0] = a6_rd(st4);
++					after[l][1] = a6_rd(st4 + 4);
++				}
++				static unsigned dimlogs;
++				if (dimlogs++ < 20) {
++					a6_log("mdp dim %u: LM0 st4 %08x/%08x -> %08x/%08x, LM1 %08x/%08x -> %08x/%08x, ctl flush %08x\n", dim,
++					    before[0][0], before[0][1], after[0][0], after[0][1], before[1][0], before[1][1], after[1][0],
++					    after[1][1], a6_rd(CTL0_FLUSH));
++				}
+ 				mdp_dim_now = dim;
+ 			}
+ 			dim = 0;
+-- 
+2.53.0
+
