@@ -272,7 +272,12 @@ static bool listed(void)
 		 * Extended-range (XR10) formats: the frontend withholds them so backboardd keeps an 8-bit framebuffer; other
 		 * processes may render into them (AegirPoster's CAMetalLayer throws "unsupported extended range format" without).
 		 */
-		if (device && strcmp(getprogname(), "backboardd") != 0)
+		/*
+		 * y2q: only when /var/local/mtl2-xr10 exists. Vulkan has no XR formats: metal2vulkan emulates them (an RGBA16F
+		 * twin of every pass, 12 bytes a pixel of GMEM and 30 tiles a full-screen pass, unreached tiles rewritten, the
+		 * two-plane bytes by compute), and the render server composited the apps' XR layers through all of it.
+		 */
+		if (device && strcmp(getprogname(), "backboardd") != 0 && access("/var/local/mtl2-xr10", F_OK) == 0)
 			class_replaceMethod(object_getClass(device), sel_registerName("supportsExtendedXR10Formats"),
 					    imp_implementationWithBlock(^BOOL(id me) { (void)me; return YES; }), "B16@0:8");
 		/* image bases, for symbolicating pstack samples (atos -o out/HotMetal2.dSYM -l BASE ADDR) */
